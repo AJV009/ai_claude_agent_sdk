@@ -1,0 +1,18 @@
+<?php
+
+declare(strict_types=1);
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_page_attachments().
+ */
+function claude_agent_sdk_debug_page_attachments(array &$attachments): void {
+  $routeMatch = \Drupal::routeMatch();
+  if (!$routeMatch instanceof RouteMatchInterface) {
+    return;
+  }
+  if ($routeMatch->getRouteName() === 'claude_agent_sdk_debug.page') {
+    $attachments['#attached']['library'][] = 'claude_agent_sdk_debug/debug';
+  }
+}

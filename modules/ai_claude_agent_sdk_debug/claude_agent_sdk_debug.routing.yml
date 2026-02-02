@@ -1,0 +1,14 @@
+claude_agent_sdk_debug.page:
+  path: '/claudeagentsdkdebug'
+  defaults:
+    _title: 'Claude Agent SDK Debug'
+    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
+  requirements:
+    _permission: 'access claude agent sdk debug'
+
+claude_agent_sdk_debug.stream:
+  path: '/claudeagentsdkdebug/stream'
+  defaults:
+    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugStreamController::stream'
+  requirements:
+    _permission: 'access claude agent sdk debug'

@@ -1,0 +1,7 @@
+debug:
+  version: 1.x
+  js:
+    js/claude_agent_sdk_debug.js: {}
+  dependencies:
+    - core/drupal
+    - core/jquery

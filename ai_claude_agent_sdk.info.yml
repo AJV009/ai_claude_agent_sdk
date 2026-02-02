@@ -1,0 +1,5 @@
+name: AI Claude Agent SDK
+type: module
+description: Integrates Drupal with the Claude Agent SDK for Claude Code based agents.
+core_version_requirement: ^11 || ^10
+package: AI
