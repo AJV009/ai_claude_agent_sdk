@@ -1,0 +1,4 @@
+services:
+  ai_claude_agent_sdk.process_limiter:
+    class: Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter
+    arguments: ['@config.factory']

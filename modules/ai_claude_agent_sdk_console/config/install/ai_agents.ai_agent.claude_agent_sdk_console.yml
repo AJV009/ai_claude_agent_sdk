@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies: { }
+id: claude_agent_sdk_console
+label: 'Claude Agent SDK Console'
+description: 'Uses the Claude Agent SDK (Claude Code) for AI Console prompts.'
+system_prompt: 'You are Claude Code. Answer the user prompt clearly and concisely.'
+secured_system_prompt: '[ai_agent:agent_instructions]'
+tools: { }
+orchestration_agent: false
+triage_agent: false
+max_loops: 1
+default_information_tools: ''
+tool_usage_limits: { }
+tool_settings: { }
+context_agent: null
+masquerade_roles: { }
+exclude_users_role: false
+structured_output_enabled: false
+structured_output_schema: ''

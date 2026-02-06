@@ -1,0 +1,6 @@
+ai_claude_agent_sdk.settings:
+  title: 'Claude Agent SDK'
+  description: 'Configure the Claude Agent SDK integration.'
+  parent: ai.admin_settings
+  route_name: ai_claude_agent_sdk.settings
+  weight: 50

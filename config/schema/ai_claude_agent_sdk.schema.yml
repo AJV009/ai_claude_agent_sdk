@@ -1,0 +1,16 @@
+ai_claude_agent_sdk.settings:
+  type: config_object
+  label: 'AI Claude Agent SDK settings'
+  mapping:
+    cli_path:
+      type: string
+      label: 'Claude CLI path'
+    default_model:
+      type: string
+      label: 'Default model'
+    working_directory:
+      type: string
+      label: 'Working directory'
+    max_concurrent_cli:
+      type: integer
+      label: 'Max concurrent Claude CLI processes'

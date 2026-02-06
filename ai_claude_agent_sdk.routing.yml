@@ -1,0 +1,7 @@
+ai_claude_agent_sdk.settings:
+  path: '/admin/config/ai/claude-agent-sdk'
+  defaults:
+    _title: 'Claude Agent SDK'
+    _form: '\Drupal\ai_claude_agent_sdk\Form\ClaudeAgentSdkSettingsForm'
+  requirements:
+    _permission: 'administer claude agent sdk'

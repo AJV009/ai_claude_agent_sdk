@@ -10,8 +10,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 
 final class ClaudeAgentSdkDebugController extends ControllerBase {
 
-  public function page(): array {
-    return $this->formBuilder()->getForm('Drupal\\claude_agent_sdk_debug\\Form\\ClaudeAgentSdkDebugForm');
+  public function page(string $mode = 'client'): array {
+    return $this->formBuilder()->getForm('Drupal\\claude_agent_sdk_debug\\Form\\ClaudeAgentSdkDebugForm', $mode);
   }
 
 }

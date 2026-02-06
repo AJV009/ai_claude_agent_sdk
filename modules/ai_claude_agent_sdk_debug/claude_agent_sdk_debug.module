@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Url;
 
 /**
  * Implements hook_page_attachments().
@@ -12,7 +13,11 @@ function claude_agent_sdk_debug_page_attachments(array &$attachments): void {
   if (!$routeMatch instanceof RouteMatchInterface) {
     return;
   }
-  if ($routeMatch->getRouteName() === 'claude_agent_sdk_debug.page') {
+  if (in_array($routeMatch->getRouteName(), ['claude_agent_sdk_debug.page', 'claude_agent_sdk_debug.query', 'claude_agent_sdk_debug.terminal'], true)) {
     $attachments['#attached']['library'][] = 'claude_agent_sdk_debug/debug';
+    $attachments['#attached']['drupalSettings']['claudeAgentSdkDebug'] = [
+      'streamUrl' => Url::fromRoute('claude_agent_sdk_debug.stream')->toString(),
+      'mode' => $routeMatch->getParameter('mode') ?? 'client',
+    ];
   }
 }

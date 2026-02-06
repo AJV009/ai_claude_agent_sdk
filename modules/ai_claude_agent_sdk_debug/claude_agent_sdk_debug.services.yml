@@ -1,0 +1,4 @@
+services:
+  claude_agent_sdk_debug.session_tracker:
+    class: Drupal\claude_agent_sdk_debug\Session\SessionTracker
+    arguments: ['@state']

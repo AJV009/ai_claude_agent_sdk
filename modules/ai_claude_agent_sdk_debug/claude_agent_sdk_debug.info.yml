@@ -1,5 +1,7 @@
 name: Claude Agent SDK Debug
 type: module
 description: Debug UI for sending commands to the Claude Agent SDK.
-core_version_requirement: ^11 || ^10 || ^9
-package: Custom
+core_version_requirement: ^11 || ^10
+package: AI
+dependencies:
+  - ai_claude_agent_sdk

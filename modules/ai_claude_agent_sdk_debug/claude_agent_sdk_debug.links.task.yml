@@ -1,0 +1,23 @@
+claude_agent_sdk_debug.client_tab:
+  route_name: claude_agent_sdk_debug.page
+  title: 'Multiple exchanges (Client)'
+  base_route: claude_agent_sdk_debug.page
+  weight: 0
+
+claude_agent_sdk_debug.query_tab:
+  route_name: claude_agent_sdk_debug.query
+  title: 'Single exchange (query)'
+  base_route: claude_agent_sdk_debug.page
+  weight: 10
+
+claude_agent_sdk_debug.terminal_tab:
+  route_name: claude_agent_sdk_debug.terminal
+  title: 'Terminal (Client)'
+  base_route: claude_agent_sdk_debug.page
+  weight: 20
+
+claude_agent_sdk_debug.processes_tab:
+  route_name: claude_agent_sdk_debug.processes
+  title: 'Processes'
+  base_route: claude_agent_sdk_debug.page
+  weight: 30

@@ -1,0 +1,11 @@
+ai_claude_agent_sdk.settings_tab:
+  route_name: ai_claude_agent_sdk.settings
+  title: 'Settings'
+  base_route: ai_claude_agent_sdk.settings
+  weight: 0
+
+ai_claude_agent_sdk.debug_tab:
+  route_name: claude_agent_sdk_debug.page
+  title: 'Debug'
+  base_route: ai_claude_agent_sdk.settings
+  weight: 10

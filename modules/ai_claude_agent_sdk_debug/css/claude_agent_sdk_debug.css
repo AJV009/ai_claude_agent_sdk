@@ -1,0 +1,88 @@
+.claude-agent-sdk-terminal-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 2fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.claude-agent-sdk-terminal-sidebar details {
+  margin-bottom: 12px;
+}
+
+.claude-agent-sdk-terminal-main {
+  background: #0f0f0f;
+  color: #eee;
+  border: 1px solid #222;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.claude-agent-sdk-terminal-output {
+  background: #0b0b0b;
+  border: 1px solid #222;
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 280px;
+  max-height: 420px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.claude-agent-sdk-terminal-input {
+  display: flex;
+  gap: 8px;
+}
+
+.claude-agent-sdk-terminal-input textarea {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.claude-agent-sdk-terminal-status {
+  font-size: 12px;
+  color: #9aa0a6;
+}
+
+.claude-agent-sdk-terminal-raw {
+  background: #0b0b0b;
+  border: 1px solid #222;
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 160px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  color: #cbd5f5;
+}
+
+.claude-agent-sdk-processes-page table th,
+.claude-agent-sdk-processes-page table td {
+  font-size: 12px;
+}
+
+.claude-agent-sdk-terminal-line--user {
+  color: #7dd3fc;
+}
+
+.claude-agent-sdk-terminal-line--assistant {
+  color: #d1fae5;
+}
+
+.claude-agent-sdk-terminal-line--error {
+  color: #fca5a5;
+}
+
+.claude-agent-sdk-terminal-line--system {
+  color: #fbbf24;
+}

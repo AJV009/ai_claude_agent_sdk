@@ -1,0 +1,9 @@
+name: AI Claude Agent SDK Console
+type: module
+description: Integrates AI Console with the Claude Agent SDK (Claude Code).
+core_version_requirement: ^11 || ^10
+package: AI
+dependencies:
+  - ai_claude_agent_sdk
+  - ai_console
+  - ai_agents

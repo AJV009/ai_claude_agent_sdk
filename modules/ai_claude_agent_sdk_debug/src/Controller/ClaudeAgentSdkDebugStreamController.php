@@ -8,14 +8,35 @@ use Claude\AgentSdk\ClaudeAgentOptions;
 use Claude\AgentSdk\Client;
 use Claude\AgentSdk\Types\PermissionResultAllow;
 use Claude\AgentSdk\Types\PermissionResultDeny;
+use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\claude_agent_sdk_debug\Session\SessionTracker;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
 
+  public function __construct(
+    private readonly SessionTracker $sessionTracker,
+    private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
+  ) {}
+
+  public static function create(ContainerInterface $container): self {
+    return new self(
+      $container->get('claude_agent_sdk_debug.session_tracker'),
+      $container->get('ai_claude_agent_sdk.process_limiter'),
+    );
+  }
+
   public function stream(Request $request): StreamedResponse {
+    if ($request->getContent() === '' || $request->getContent() === null) {
+      return new StreamedResponse(function () {
+        echo "data: " . Json::encode(['error' => 'POST JSON body required.']) . "\n\n";
+      }, 400);
+    }
+
     $payload = Json::decode($request->getContent() ?? '');
     if (!is_array($payload)) {
       return new StreamedResponse(function () {
@@ -23,20 +44,54 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       }, 400);
     }
 
-    $options = $this->buildOptions($payload['options'] ?? [], $payload['debug_callbacks'] ?? []);
+    $optionsData = is_array($payload['options'] ?? null) ? $payload['options'] : [];
+    $options = $this->buildOptions($optionsData, $payload['debug_callbacks'] ?? []);
     $messages = $payload['messages'] ?? [];
     if (!is_array($messages)) {
       $messages = [];
     }
+    $sessionId = is_string($payload['session_id'] ?? null) ? $payload['session_id'] : null;
+    if ($sessionId !== null) {
+      foreach ($messages as $idx => $message) {
+        if (is_array($message) && !isset($message['session_id'])) {
+          $messages[$idx]['session_id'] = $sessionId;
+        }
+      }
+    }
 
     $control = $payload['control'] ?? null;
+    $sessionMeta = [
+      'mode' => is_string($payload['mode'] ?? null) ? (string) $payload['mode'] : 'client',
+      'source' => 'stream',
+      'resume' => is_string($optionsData['resume'] ?? null) ? (string) $optionsData['resume'] : null,
+    ];
 
     $response = new StreamedResponse();
     $response->headers->set('Content-Type', 'text/event-stream');
     $response->headers->set('Cache-Control', 'no-cache');
     $response->headers->set('Connection', 'keep-alive');
+    $response->headers->set('X-Accel-Buffering', 'no');
 
-    $response->setCallback(function () use ($options, $messages, $control) {
+    $response->setCallback(function () use ($options, $messages, $control, $sessionId, $sessionMeta) {
+      $emit = function (array $payload): void {
+        echo 'data: ' . Json::encode($payload) . "\n\n";
+        if (function_exists('ob_flush')) {
+          @ob_flush();
+        }
+        flush();
+      };
+
+      $emit(['status' => 'connected', 'session_id' => $sessionId]);
+
+      if (!$this->processLimiter->canStart()) {
+        $status = $this->processLimiter->getStatus();
+        $emit([
+          'error' => sprintf('Claude CLI limit reached (%d running, limit %d).', $status['running'], $status['limit']),
+          'session_id' => $sessionId,
+        ]);
+        return;
+      }
+
       $client = new Client($options);
 
       $stream = (function () use ($messages): iterable {
@@ -47,19 +102,31 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
         }
       })();
 
-      $client->connect($stream);
+      try {
+        $client->connect($stream);
 
-      if (is_array($control)) {
-        $this->applyControl($client, $control);
+        if (is_array($control)) {
+          $this->applyControl($client, $control);
+        }
+
+        foreach ($client->receiveMessages() as $message) {
+          $raw = $message->getRaw();
+          $sessionIdFromMessage = $raw['session_id'] ?? $sessionId;
+          if (is_string($sessionIdFromMessage) && $sessionIdFromMessage !== '' && $sessionIdFromMessage !== 'default') {
+            $this->sessionTracker->record($sessionIdFromMessage, $sessionMeta);
+          }
+          $emit([
+            'message' => $raw,
+            'session_id' => $sessionIdFromMessage,
+          ]);
+        }
       }
-
-      foreach ($client->receiveMessages() as $message) {
-        $raw = $message->getRaw();
-        echo 'data: ' . Json::encode(['message' => $raw]) . "\n\n";
-        flush();
+      catch (\Throwable $e) {
+        $emit(['error' => $e->getMessage(), 'session_id' => $sessionId]);
       }
-
-      $client->close();
+      finally {
+        $client->close();
+      }
     });
 
     return $response;

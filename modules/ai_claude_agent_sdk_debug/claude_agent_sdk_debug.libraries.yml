@@ -2,6 +2,20 @@ debug:
   version: 1.x
   js:
     js/claude_agent_sdk_debug.js: {}
+  css:
+    theme:
+      css/claude_agent_sdk_debug.css: {}
   dependencies:
     - core/drupal
     - core/jquery
+    - core/once
+
+processes:
+  version: 1.x
+  js:
+    js/claude_agent_sdk_processes.js: {}
+  css:
+    theme:
+      css/claude_agent_sdk_debug.css: {}
+  dependencies:
+    - core/drupal
