@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Drupal\claude_agent_sdk_debug\Controller;
+namespace Drupal\ai_claude_agent_sdk_debug\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Url;
-use Drupal\claude_agent_sdk_debug\Session\SessionTracker;
+use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
 use Drupal\Core\Access\CsrfTokenGenerator;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -21,13 +21,13 @@ final class ClaudeAgentSdkDebugProcessController extends ControllerBase {
 
   public static function create(ContainerInterface $container): self {
     return new self(
-      $container->get('claude_agent_sdk_debug.session_tracker'),
+      $container->get('ai_claude_agent_sdk_debug.session_tracker'),
       $container->get('csrf_token')
     );
   }
 
   public function page(): array {
-    $token = $this->csrfTokenGenerator->get('claude_agent_sdk_debug.kill');
+    $token = $this->csrfTokenGenerator->get('ai_claude_agent_sdk_debug.kill');
 
     return [
       '#type' => 'container',
@@ -42,12 +42,12 @@ final class ClaudeAgentSdkDebugProcessController extends ControllerBase {
       ],
       '#attached' => [
         'library' => [
-          'claude_agent_sdk_debug/processes',
+          'ai_claude_agent_sdk_debug/processes',
         ],
         'drupalSettings' => [
           'claudeAgentSdkProcesses' => [
-            'dataUrl' => Url::fromRoute('claude_agent_sdk_debug.processes_data')->toString(),
-            'killUrl' => Url::fromRoute('claude_agent_sdk_debug.processes_kill')->toString(),
+            'dataUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.processes_data')->toString(),
+            'killUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.processes_kill')->toString(),
             'killToken' => $token,
           ],
         ],

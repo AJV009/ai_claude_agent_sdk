@@ -1,0 +1,23 @@
+<?php
+
+declare(strict_types=1);
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_page_attachments().
+ */
+function ai_claude_agent_sdk_debug_page_attachments(array &$attachments): void {
+  $routeMatch = \Drupal::routeMatch();
+  if (!$routeMatch instanceof RouteMatchInterface) {
+    return;
+  }
+  if (in_array($routeMatch->getRouteName(), ['ai_claude_agent_sdk_debug.page', 'ai_claude_agent_sdk_debug.query', 'ai_claude_agent_sdk_debug.terminal'], true)) {
+    $attachments['#attached']['library'][] = 'ai_claude_agent_sdk_debug/debug';
+    $attachments['#attached']['drupalSettings']['claudeAgentSdkDebug'] = [
+      'streamUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.stream')->toString(),
+      'mode' => $routeMatch->getParameter('mode') ?? 'client',
+    ];
+  }
+}

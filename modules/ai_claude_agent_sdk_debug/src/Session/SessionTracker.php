@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Drupal\claude_agent_sdk_debug\Session;
+namespace Drupal\ai_claude_agent_sdk_debug\Session;
 
 use Drupal\Core\State\StateInterface;
 
 final class SessionTracker {
 
-  private const STATE_KEY = 'claude_agent_sdk_debug.sessions';
+  private const STATE_KEY = 'ai_claude_agent_sdk_debug.sessions';
   private const MAX_SESSIONS = 100;
 
   public function __construct(private readonly StateInterface $state) {}

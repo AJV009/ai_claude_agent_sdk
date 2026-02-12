@@ -14,3 +14,12 @@ ai_claude_agent_sdk.settings:
     max_concurrent_cli:
       type: integer
       label: 'Max concurrent Claude CLI processes'
+    api_key_source:
+      type: string
+      label: 'API key source'
+    api_key_key:
+      type: string
+      label: 'Key module API key entity ID'
+    api_key_env_var:
+      type: string
+      label: 'Environment variable name for API key'

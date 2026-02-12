@@ -2,3 +2,6 @@ services:
   ai_claude_agent_sdk.process_limiter:
     class: Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter
     arguments: ['@config.factory']
+  ai_claude_agent_sdk.auth_env_resolver:
+    class: Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver
+    arguments: ['@config.factory', '@key.repository']

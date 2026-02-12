@@ -4,3 +4,6 @@ description: Integrates Drupal with the Claude Agent SDK for Claude Code based a
 core_version_requirement: ^11 || ^10
 package: AI
 configure: ai_claude_agent_sdk.settings
+dependencies:
+  - ai
+  - key

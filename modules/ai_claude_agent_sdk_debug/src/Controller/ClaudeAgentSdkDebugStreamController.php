@@ -2,16 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Drupal\claude_agent_sdk_debug\Controller;
+namespace Drupal\ai_claude_agent_sdk_debug\Controller;
 
 use Claude\AgentSdk\ClaudeAgentOptions;
 use Claude\AgentSdk\Client;
 use Claude\AgentSdk\Types\PermissionResultAllow;
 use Claude\AgentSdk\Types\PermissionResultDeny;
+use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\claude_agent_sdk_debug\Session\SessionTracker;
+use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -21,12 +22,14 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
   public function __construct(
     private readonly SessionTracker $sessionTracker,
     private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
+    private readonly ClaudeAgentSdkAuthEnvResolver $authEnvResolver,
   ) {}
 
   public static function create(ContainerInterface $container): self {
     return new self(
-      $container->get('claude_agent_sdk_debug.session_tracker'),
+      $container->get('ai_claude_agent_sdk_debug.session_tracker'),
       $container->get('ai_claude_agent_sdk.process_limiter'),
+      $container->get('ai_claude_agent_sdk.auth_env_resolver'),
     );
   }
 
@@ -171,7 +174,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       canUseTool: $canUseTool,
       hooks: $hooks,
       mcpMessageHandler: $mcpHandler,
-      env: $optionsData['env'] ?? [],
+      env: $this->authEnvResolver->buildEnv($optionsData['env'] ?? []),
       extraArgs: $optionsData['extraArgs'] ?? [],
     );
   }

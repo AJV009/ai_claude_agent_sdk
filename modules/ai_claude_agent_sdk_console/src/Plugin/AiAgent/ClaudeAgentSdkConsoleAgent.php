@@ -9,6 +9,7 @@ use Claude\AgentSdk\Client;
 use Claude\AgentSdk\Types\AssistantMessage;
 use Claude\AgentSdk\Types\ResultMessage;
 use Claude\AgentSdk\Types\TextBlock;
+use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -30,6 +31,8 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
   use DependencySerializationTrait;
 
   private ?ClaudeAgentSdkProcessLimiter $processLimiter = null;
+
+  private ?ClaudeAgentSdkAuthEnvResolver $authEnvResolver = null;
 
   /**
    * {@inheritDoc}
@@ -102,6 +105,7 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
     }
 
     $this->processLimiter ??= \Drupal::service('ai_claude_agent_sdk.process_limiter');
+    $this->authEnvResolver ??= \Drupal::service('ai_claude_agent_sdk.auth_env_resolver');
     if ($this->processLimiter && !$this->processLimiter->canStart()) {
       $status = $this->processLimiter->getStatus();
       return (string) $this->t('Claude CLI limit reached (@running running, limit @limit). Try again later.', [
@@ -126,6 +130,7 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
       cwd: $cwd !== '' ? $cwd : null,
       model: $model !== '' ? $model : null,
       systemPrompt: $systemPrompt !== '' ? $systemPrompt : null,
+      env: $this->authEnvResolver?->buildEnv([]) ?? [],
       hooks: [],
     );
 

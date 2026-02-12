@@ -1,68 +1,68 @@
-claude_agent_sdk_debug.page:
+ai_claude_agent_sdk_debug.page:
   path: '/admin/config/ai/claude-agent-sdk/debug'
   defaults:
     _title: 'Claude Agent SDK Debug'
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
     mode: 'client'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
     _admin_route: TRUE
 
-claude_agent_sdk_debug.query:
+ai_claude_agent_sdk_debug.query:
   path: '/admin/config/ai/claude-agent-sdk/debug/query'
   defaults:
     _title: 'Claude Agent SDK Debug'
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
     mode: 'query'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
     _admin_route: TRUE
 
-claude_agent_sdk_debug.terminal:
+ai_claude_agent_sdk_debug.terminal:
   path: '/admin/config/ai/claude-agent-sdk/debug/terminal'
   defaults:
     _title: 'Claude Agent SDK Debug'
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
     mode: 'terminal'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
     _admin_route: TRUE
 
-claude_agent_sdk_debug.processes:
+ai_claude_agent_sdk_debug.processes:
   path: '/admin/config/ai/claude-agent-sdk/debug/processes'
   defaults:
     _title: 'Claude Agent SDK Processes'
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugProcessController::page'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugProcessController::page'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
     _admin_route: TRUE
 
-claude_agent_sdk_debug.processes_data:
+ai_claude_agent_sdk_debug.processes_data:
   path: '/admin/config/ai/claude-agent-sdk/debug/processes/data'
   defaults:
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugProcessController::data'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugProcessController::data'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
     _admin_route: TRUE
 
-claude_agent_sdk_debug.processes_kill:
+ai_claude_agent_sdk_debug.processes_kill:
   path: '/admin/config/ai/claude-agent-sdk/debug/processes/kill'
   defaults:
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugProcessController::kill'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugProcessController::kill'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
     _admin_route: TRUE
     _csrf_token: TRUE
 
-claude_agent_sdk_debug.stream:
+ai_claude_agent_sdk_debug.stream:
   path: '/admin/config/ai/claude-agent-sdk/debug/stream'
   defaults:
-    _controller: '\Drupal\claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugStreamController::stream'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugStreamController::stream'
   requirements:
     _permission: 'access claude agent sdk debug'

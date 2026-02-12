@@ -2,46 +2,55 @@
 
 declare(strict_types=1);
 
-namespace Drupal\claude_agent_sdk_debug\Form;
+namespace Drupal\ai_claude_agent_sdk_debug\Form;
 
 use Claude\AgentSdk\ClaudeAgentOptions;
 use Claude\AgentSdk\Client;
 use Claude\AgentSdk\Query;
 use Claude\AgentSdk\Types\PermissionResultAllow;
 use Claude\AgentSdk\Types\PermissionResultDeny;
+use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
-use Drupal\claude_agent_sdk_debug\Session\SessionTracker;
+use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 final class ClaudeAgentSdkDebugForm extends FormBase {
 
-  public function __construct(
-    private readonly SessionTracker $sessionTracker,
-    private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
-  ) {}
+  protected SessionTracker $sessionTracker;
+
+  protected ClaudeAgentSdkProcessLimiter $processLimiter;
+
+  protected ClaudeAgentSdkAuthEnvResolver $authEnvResolver;
+
+  public function __construct(SessionTracker $sessionTracker, ClaudeAgentSdkProcessLimiter $processLimiter, ClaudeAgentSdkAuthEnvResolver $authEnvResolver) {
+    $this->sessionTracker = $sessionTracker;
+    $this->processLimiter = $processLimiter;
+    $this->authEnvResolver = $authEnvResolver;
+  }
 
   public static function create(ContainerInterface $container): self {
     return new self(
-      $container->get('claude_agent_sdk_debug.session_tracker'),
+      $container->get('ai_claude_agent_sdk_debug.session_tracker'),
       $container->get('ai_claude_agent_sdk.process_limiter'),
+      $container->get('ai_claude_agent_sdk.auth_env_resolver'),
     );
   }
 
   public function getFormId(): string {
-    return 'claude_agent_sdk_debug_form';
+    return 'ai_claude_agent_sdk_debug_form';
   }
 
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $buildInfo = $form_state->getBuildInfo();
     $mode = (string) ($buildInfo['args'][0] ?? 'client');
 
-    $form['#attached']['library'][] = 'claude_agent_sdk_debug/debug';
+    $form['#attached']['library'][] = 'ai_claude_agent_sdk_debug/debug';
     $form['#attached']['drupalSettings']['claudeAgentSdkDebug'] = [
-      'streamUrl' => Url::fromRoute('claude_agent_sdk_debug.stream')->toString(),
+      'streamUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.stream')->toString(),
       'mode' => $mode,
     ];
 
@@ -49,7 +58,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#type' => 'item',
       '#title' => $this->t('Streaming endpoint'),
       '#markup' => $this->t('POST JSON to <code>@url</code> (GET will return an error).', [
-        '@url' => Url::fromRoute('claude_agent_sdk_debug.stream')->toString(),
+        '@url' => Url::fromRoute('ai_claude_agent_sdk_debug.stream')->toString(),
       ]),
     ];
 
@@ -222,7 +231,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#value' => $this->t('Send to SDK'),
     ];
 
-    $output = $form_state->get('claude_agent_sdk_debug_output');
+    $output = $form_state->get('ai_claude_agent_sdk_debug_output');
     if (is_string($output) && $output !== '') {
       $form['output'] = [
         '#type' => 'details',
@@ -298,10 +307,14 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         }
       }
 
-      $form_state->set('claude_agent_sdk_debug_output', $output);
+      $form_state->set('ai_claude_agent_sdk_debug_output', $output);
       $form_state->setRebuild(TRUE);
     }
     catch (\Throwable $e) {
+      \Drupal::logger('ai_claude_agent_sdk_debug')->error('Debug query failed: @type @message', [
+        '@type' => get_class($e),
+        '@message' => $e->getMessage(),
+      ]);
       $this->messenger()->addError($this->t('SDK error: @msg', ['@msg' => $e->getMessage()]));
     }
   }
@@ -348,7 +361,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       mcpMessageHandler: $mcpHandler,
       initializeTimeout: $optionsData['initializeTimeout'] ?? null,
       user: $optionsData['user'] ?? null,
-      env: $optionsData['env'] ?? [],
+      env: $this->authEnvResolver->buildEnv($optionsData['env'] ?? []),
       extraArgs: $optionsData['extraArgs'] ?? [],
     );
   }
