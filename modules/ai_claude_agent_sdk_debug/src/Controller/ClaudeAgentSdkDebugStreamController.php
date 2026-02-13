@@ -10,6 +10,7 @@ use Claude\AgentSdk\Types\PermissionResultAllow;
 use Claude\AgentSdk\Types\PermissionResultDeny;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
+use Drupal\ai_claude_agent_sdk_debug\Session\SessionFileStore;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
@@ -21,6 +22,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
 
   public function __construct(
     private readonly SessionTracker $sessionTracker,
+    private readonly SessionFileStore $sessionFileStore,
     private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
     private readonly ClaudeAgentSdkAuthEnvResolver $authEnvResolver,
   ) {}
@@ -28,6 +30,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
   public static function create(ContainerInterface $container): self {
     return new self(
       $container->get('ai_claude_agent_sdk_debug.session_tracker'),
+      $container->get('ai_claude_agent_sdk_debug.session_file_store'),
       $container->get('ai_claude_agent_sdk.process_limiter'),
       $container->get('ai_claude_agent_sdk.auth_env_resolver'),
     );
@@ -48,6 +51,13 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     }
 
     $optionsData = is_array($payload['options'] ?? null) ? $payload['options'] : [];
+    $requestedResume = is_string($optionsData['resume'] ?? null) ? trim((string) $optionsData['resume']) : '';
+    if ($requestedResume !== '' && count($this->sessionFileStore->listSessionFiles($requestedResume)) === 0) {
+      return new StreamedResponse(function () use ($requestedResume) {
+        echo "data: " . Json::encode(['error' => 'Resume session ID not found in local Claude session files: ' . $requestedResume]) . "\n\n";
+      }, 400);
+    }
+
     $options = $this->buildOptions($optionsData, $payload['debug_callbacks'] ?? []);
     $messages = $payload['messages'] ?? [];
     if (!is_array($messages)) {
@@ -76,7 +86,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     $response->headers->set('Connection', 'keep-alive');
     $response->headers->set('X-Accel-Buffering', 'no');
 
-    $response->setCallback(function () use ($options, $messages, $control, $sessionId, $sessionMeta) {
+    $response->setCallback(function () use ($options, $messages, $control, $sessionId, $sessionMeta, $requestedResume) {
       $emit = function (array $payload): void {
         echo 'data: ' . Json::encode($payload) . "\n\n";
         if (function_exists('ob_flush')) {
@@ -116,6 +126,9 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
         foreach ($client->receiveMessages() as $message) {
           $raw = $message->getRaw();
           $sessionIdFromMessage = $raw['session_id'] ?? $sessionId;
+          if ($requestedResume !== '' && is_string($sessionIdFromMessage) && $sessionIdFromMessage !== '' && $sessionIdFromMessage !== $requestedResume) {
+            throw new \RuntimeException(sprintf('Resume session mismatch: requested %s but Claude returned %s. Response rejected.', $requestedResume, $sessionIdFromMessage));
+          }
           if (is_string($sessionIdFromMessage) && $sessionIdFromMessage !== '' && $sessionIdFromMessage !== 'default') {
             $this->sessionTracker->record($sessionIdFromMessage, $sessionMeta);
           }

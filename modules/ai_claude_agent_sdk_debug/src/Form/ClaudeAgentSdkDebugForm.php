@@ -15,6 +15,7 @@ use Drupal\Component\Serialization\Json;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
+use Drupal\ai_claude_agent_sdk_debug\Session\SessionFileStore;
 use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -26,12 +27,15 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
   protected ClaudeAgentSdkAuthEnvResolver $authEnvResolver;
 
+  protected SessionFileStore $sessionFileStore;
+
   private ?string $lastSessionId = null;
 
-  public function __construct(SessionTracker $sessionTracker, ClaudeAgentSdkProcessLimiter $processLimiter, ClaudeAgentSdkAuthEnvResolver $authEnvResolver) {
+  public function __construct(SessionTracker $sessionTracker, ClaudeAgentSdkProcessLimiter $processLimiter, ClaudeAgentSdkAuthEnvResolver $authEnvResolver, SessionFileStore $sessionFileStore) {
     $this->sessionTracker = $sessionTracker;
     $this->processLimiter = $processLimiter;
     $this->authEnvResolver = $authEnvResolver;
+    $this->sessionFileStore = $sessionFileStore;
   }
 
   public static function create(ContainerInterface $container): self {
@@ -39,6 +43,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $container->get('ai_claude_agent_sdk_debug.session_tracker'),
       $container->get('ai_claude_agent_sdk.process_limiter'),
       $container->get('ai_claude_agent_sdk.auth_env_resolver'),
+      $container->get('ai_claude_agent_sdk_debug.session_file_store'),
     );
   }
 
@@ -123,6 +128,22 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#default_value' => $form_state->getValue('prompt') ?? '',
       '#required' => TRUE,
     ];
+
+    if ($mode === 'session_query') {
+      $sessionContinueDefault = $form_state->getValue('session_continue');
+      if ($sessionContinueDefault === NULL) {
+        $sessionContinueDefault = $form_state->get('ai_claude_agent_sdk_debug_session_continue');
+      }
+      if ($sessionContinueDefault === NULL) {
+        $sessionContinueDefault = TRUE;
+      }
+      $form['session_continue'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Continue conversation'),
+        '#description' => $this->t('If enabled, the last returned session ID is auto-filled and reused.'),
+        '#default_value' => (bool) $sessionContinueDefault,
+      ];
+    }
 
     $form += $this->buildOptionsForm($form_state, $mode);
 
@@ -271,8 +292,38 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $controlMode = (string) $form_state->getValue('control_mode');
     $controlModel = (string) $form_state->getValue('control_model');
     $controlUserMessageId = (string) $form_state->getValue('control_user_message_id');
+    $sessionContinue = $mode === 'session_query' ? (bool) $form_state->getValue('session_continue') : FALSE;
+    $requestedResume = null;
 
     $optionsData = $this->collectOptions($form_state);
+    if ($mode === 'session_query') {
+      if (!$sessionContinue) {
+        unset($optionsData['resume']);
+        $optionsData['continueConversation'] = FALSE;
+        $form_state->set('ai_claude_agent_sdk_debug_resume', '');
+      }
+      else {
+        $resume = trim((string) ($optionsData['resume'] ?? ''));
+        if ($resume === '') {
+          $resume = (string) ($form_state->get('ai_claude_agent_sdk_debug_resume') ?? '');
+        }
+        if ($resume === '') {
+          unset($optionsData['resume']);
+          $optionsData['continueConversation'] = FALSE;
+        }
+        else {
+          if (count($this->sessionFileStore->listSessionFiles($resume)) === 0) {
+            $this->messenger()->addError($this->t('Resume session ID not found in local Claude session files: @id', ['@id' => $resume]));
+            return;
+          }
+          $optionsData['resume'] = $resume;
+          $optionsData['continueConversation'] = TRUE;
+          $requestedResume = $resume;
+        }
+      }
+      $form_state->set('ai_claude_agent_sdk_debug_session_continue', $sessionContinue);
+    }
+
     $options = $this->buildOptions($optionsData, [
       'can_use_tool' => $form_state->getValue('can_use_tool'),
       'can_use_tool_message' => $form_state->getValue('can_use_tool_message'),
@@ -322,11 +373,24 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         }
       }
 
+      if ($mode === 'session_query' && is_string($requestedResume) && $requestedResume !== '' && is_string($this->lastSessionId) && $this->lastSessionId !== '' && $this->lastSessionId !== $requestedResume) {
+        throw new \RuntimeException(sprintf('Resume session mismatch: requested %s but Claude returned %s. Response rejected.', $requestedResume, $this->lastSessionId));
+      }
+
       $form_state->set('ai_claude_agent_sdk_debug_output', $output);
       if (is_string($this->lastSessionId) && $this->lastSessionId !== '') {
         $this->messenger()->addStatus($this->t('Session ID: @session_id', [
           '@session_id' => $this->lastSessionId,
         ]));
+        if ($mode === 'session_query' && $sessionContinue) {
+          $form_state->setValue('option_resume', $this->lastSessionId);
+          $form_state->set('ai_claude_agent_sdk_debug_resume', $this->lastSessionId);
+          $userInput = $form_state->getUserInput();
+          if (is_array($userInput)) {
+            $userInput['option_resume'] = $this->lastSessionId;
+            $form_state->setUserInput($userInput);
+          }
+        }
       }
       $form_state->setRebuild(TRUE);
     }
@@ -555,13 +619,24 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         '1' => $this->t('Yes'),
       ],
       '#default_value' => $form_state->getValue('option_continue_conversation') ?? ($mode === 'session_query' ? '1' : '0'),
+      '#access' => $mode !== 'session_query',
     ];
 
+    $resumeDefault = $form_state->getValue('option_resume');
+    $sessionContinue = $mode === 'session_query'
+      ? (bool) ($form_state->getValue('session_continue') ?? $form_state->get('ai_claude_agent_sdk_debug_session_continue') ?? TRUE)
+      : TRUE;
+    if (($resumeDefault === NULL || $resumeDefault === '') && $sessionContinue) {
+      $resumeDefault = $form_state->get('ai_claude_agent_sdk_debug_resume') ?? '';
+    }
+    if ($resumeDefault === NULL) {
+      $resumeDefault = '';
+    }
     $form['options_basic']['option_resume'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Resume session ID'),
       '#description' => $this->t('Provide a session ID to resume.'),
-      '#default_value' => $form_state->getValue('option_resume') ?? '',
+      '#default_value' => $resumeDefault,
     ];
 
     $form['options_basic']['option_include_partial_messages'] = [
