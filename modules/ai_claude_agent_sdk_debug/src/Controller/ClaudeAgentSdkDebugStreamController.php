@@ -51,6 +51,13 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     }
 
     $optionsData = is_array($payload['options'] ?? null) ? $payload['options'] : [];
+    $mode = is_string($payload['mode'] ?? null) ? (string) $payload['mode'] : 'client';
+    if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['initializeTimeout'])) {
+      $optionsData['initializeTimeout'] = 2.0;
+    }
+    if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['skipInitialize'])) {
+      $optionsData['skipInitialize'] = TRUE;
+    }
     $requestedResume = is_string($optionsData['resume'] ?? null) ? trim((string) $optionsData['resume']) : '';
     if ($requestedResume !== '' && count($this->sessionFileStore->listSessionFiles($requestedResume)) === 0) {
       return new StreamedResponse(function () use ($requestedResume) {
@@ -64,6 +71,9 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       $messages = [];
     }
     $sessionId = is_string($payload['session_id'] ?? null) ? $payload['session_id'] : null;
+    if ($sessionId === 'default') {
+      $sessionId = null;
+    }
     if ($sessionId !== null) {
       foreach ($messages as $idx => $message) {
         if (is_array($message) && !isset($message['session_id'])) {
@@ -74,7 +84,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
 
     $control = $payload['control'] ?? null;
     $sessionMeta = [
-      'mode' => is_string($payload['mode'] ?? null) ? (string) $payload['mode'] : 'client',
+      'mode' => $mode,
       'source' => 'stream',
       'resume' => is_string($optionsData['resume'] ?? null) ? (string) $optionsData['resume'] : null,
       'uid' => $this->currentUser()->isAuthenticated() ? (int) $this->currentUser()->id() : null,
@@ -86,7 +96,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     $response->headers->set('Connection', 'keep-alive');
     $response->headers->set('X-Accel-Buffering', 'no');
 
-    $response->setCallback(function () use ($options, $messages, $control, $sessionId, $sessionMeta, $requestedResume) {
+    $response->setCallback(function () use ($options, $messages, $control, $sessionId, $sessionMeta, $requestedResume, $mode) {
       $emit = function (array $payload): void {
         echo 'data: ' . Json::encode($payload) . "\n\n";
         if (function_exists('ob_flush')) {
@@ -118,6 +128,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
 
       try {
         $client->connect($stream);
+        $emit(['status' => 'client_connected', 'session_id' => $sessionId]);
 
         if (is_array($control)) {
           $this->applyControl($client, $control);
@@ -184,10 +195,14 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       plugins: $optionsData['plugins'] ?? null,
       maxThinkingTokens: $optionsData['maxThinkingTokens'] ?? null,
       outputFormat: $optionsData['outputFormat'] ?? null,
+      maxBufferSize: $optionsData['maxBufferSize'] ?? null,
       enableFileCheckpointing: $optionsData['enableFileCheckpointing'] ?? false,
       canUseTool: $canUseTool,
       hooks: $hooks,
       mcpMessageHandler: $mcpHandler,
+      skipInitialize: $optionsData['skipInitialize'] ?? false,
+      initializeTimeout: $optionsData['initializeTimeout'] ?? null,
+      user: $optionsData['user'] ?? null,
       env: $this->authEnvResolver->buildEnv($optionsData['env'] ?? []),
       extraArgs: $optionsData['extraArgs'] ?? [],
     );

@@ -7,6 +7,7 @@ debug:
       css/ai_claude_agent_sdk_debug.css: {}
   dependencies:
     - core/drupal
+    - core/drupalSettings
     - core/jquery
     - core/once
 

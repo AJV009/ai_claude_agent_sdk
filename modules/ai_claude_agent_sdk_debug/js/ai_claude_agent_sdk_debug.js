@@ -1,15 +1,29 @@
-(function (Drupal, $, once) {
+(function (Drupal, $, once, drupalSettings) {
   'use strict';
 
   Drupal.behaviors.claudeAgentSdkDebug = {
     attach: function (context) {
-      const forms = once('claude-agent-sdk-debug', 'form#claude-agent-sdk-debug-form', context);
+      const forms = once('claude-agent-sdk-debug', 'form#ai-claude-agent-sdk-debug-form, form#claude-agent-sdk-debug-form', context);
       if (!forms.length) {
         return;
       }
       const $form = $(forms);
 
-      const debugMode = (drupalSettings && drupalSettings.claudeAgentSdkDebug && drupalSettings.claudeAgentSdkDebug.mode) || 'client';
+      const modeFromSettings = (drupalSettings && drupalSettings.claudeAgentSdkDebug && drupalSettings.claudeAgentSdkDebug.mode) || '';
+      const modeFromPath = (function () {
+        const path = String(window.location.pathname || '');
+        if (path.indexOf('/debug/terminal') !== -1) {
+          return 'terminal';
+        }
+        if (path.indexOf('/debug/session-query') !== -1) {
+          return 'session_query';
+        }
+        if (path.indexOf('/debug/query') !== -1) {
+          return 'query';
+        }
+        return 'client';
+      })();
+      const debugMode = modeFromSettings || modeFromPath;
 
       const $streamButton = $('<button type="button" class="button">Stream via SSE</button>');
       const $output = $('<textarea readonly rows="12" style="width:100%;"></textarea>');
@@ -88,6 +102,14 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         }).then(function (response) {
+          if (!response.ok) {
+            return response.text().then(function (text) {
+              throw new Error(text || ('HTTP ' + response.status));
+            });
+          }
+          if (!response.body) {
+            throw new Error('No response body from stream endpoint.');
+          }
           const reader = response.body.getReader();
           const decoder = new TextDecoder('utf-8');
           let buffer = '';
@@ -125,6 +147,8 @@
           }
 
           read();
+        }).catch(function (error) {
+          $output.val($output.val() + 'ERROR: ' + error.message + "\n");
         });
       });
 
@@ -151,6 +175,14 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         }).then(function (response) {
+          if (!response.ok) {
+            return response.text().then(function (text) {
+              throw new Error(text || ('HTTP ' + response.status));
+            });
+          }
+          if (!response.body) {
+            throw new Error('No response body from stream endpoint.');
+          }
           const reader = response.body.getReader();
           const decoder = new TextDecoder('utf-8');
           let buffer = '';
@@ -196,6 +228,9 @@
           }
 
           read();
+        }).catch(function (error) {
+          appendTerminalLine('ERROR: ' + error.message, 'error');
+          setStatus('Error');
         });
       });
 
@@ -222,12 +257,15 @@
         } else if (inputType === 'deepchat') {
           messages = convertDeepChat(prompt);
         } else {
-          messages = [{
+          const firstMessage = {
             type: 'user',
             message: { role: 'user', content: String(prompt) },
             parent_tool_use_id: null,
-            session_id: 'default',
-          }];
+          };
+          if (debugMode !== 'client' && debugMode !== 'terminal') {
+            firstMessage.session_id = 'default';
+          }
+          messages = [firstMessage];
         }
 
         const control = buildControl(controlAction, controlMode, controlModel, controlUserMessageId);
@@ -250,26 +288,34 @@
 
       function buildChatPayload($form, prompt, sessionId) {
         const options = buildOptionsFromForm($form);
-        options.continueConversation = true;
+        options.continueConversation = !!sessionId;
         if (sessionId) {
           options.resume = sessionId;
         }
 
-        const messages = [{
+        const message = {
           type: 'user',
           message: { role: 'user', content: String(prompt) },
           parent_tool_use_id: null,
-          session_id: sessionId || 'default',
-        }];
+        };
+        if (sessionId) {
+          message.session_id = sessionId;
+        }
 
-        return {
+        const messages = [message];
+
+        const payload = {
           mode: debugMode,
           options: options,
           messages: messages,
           control: null,
           debug_callbacks: buildDebugCallbacks($form),
-          session_id: sessionId || 'default',
         };
+        if (sessionId) {
+          payload.session_id = sessionId;
+        }
+
+        return payload;
       }
 
       function buildOptionsFromForm($form) {
@@ -411,6 +457,8 @@
           options.initializeTimeout = parseFloat(initializeTimeout);
         }
 
+        options.skipInitialize = readBoolSelect($form, 'option_skip_initialize');
+
         const user = String($form.find('[name="option_user"]').val() || '').trim();
         if (user) {
           options.user = user;
@@ -528,12 +576,15 @@
           return [];
         }
         return payload.messages.map(function (msg) {
-          return {
+          const message = {
             type: msg.role || 'user',
             message: { role: msg.role || 'user', content: msg.text || '' },
             parent_tool_use_id: null,
-            session_id: 'default',
           };
+          if (debugMode !== 'client' && debugMode !== 'terminal') {
+            message.session_id = 'default';
+          }
+          return message;
         });
       }
 
@@ -555,4 +606,4 @@
       }
     }
   };
-})(Drupal, jQuery, once);
+})(Drupal, jQuery, once, drupalSettings);

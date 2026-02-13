@@ -296,6 +296,13 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $requestedResume = null;
 
     $optionsData = $this->collectOptions($form_state);
+    if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['initializeTimeout'])) {
+      // Keep client initialization failures fast in debug mode.
+      $optionsData['initializeTimeout'] = 2.0;
+    }
+    if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['skipInitialize'])) {
+      $optionsData['skipInitialize'] = TRUE;
+    }
     if ($mode === 'session_query') {
       if (!$sessionContinue) {
         unset($optionsData['resume']);
@@ -353,23 +360,26 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       else {
         if ($inputType === 'jsonl') {
           $messages = $this->parseJsonl($promptRaw);
-          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta);
+          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta, $mode);
         }
         elseif ($inputType === 'deepchat') {
           $messages = $this->convertDeepChatToMessages($promptRaw);
-          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta);
+          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta, $mode);
         }
         else {
-          $messages = [[
+          $message = [
             'type' => 'user',
             'message' => [
               'role' => 'user',
               'content' => $promptRaw,
             ],
             'parent_tool_use_id' => null,
-            'session_id' => 'default',
-          ]];
-          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta);
+          ];
+          if (!in_array($mode, ['client', 'terminal'], TRUE)) {
+            $message['session_id'] = 'default';
+          }
+          $messages = [$message];
+          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta, $mode);
         }
       }
 
@@ -443,6 +453,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       canUseTool: $canUseTool,
       hooks: $hooks,
       mcpMessageHandler: $mcpHandler,
+      skipInitialize: $optionsData['skipInitialize'] ?? false,
       initializeTimeout: $optionsData['initializeTimeout'] ?? null,
       user: $optionsData['user'] ?? null,
       env: $this->authEnvResolver->buildEnv($optionsData['env'] ?? []),
@@ -450,37 +461,43 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     );
   }
 
-  private function runStreaming(array $messages, ClaudeAgentOptions $options, string $controlAction, string $controlMode, string $controlModel, string $controlUserMessageId, array $sessionMeta): string {
+  private function runStreaming(array $messages, ClaudeAgentOptions $options, string $controlAction, string $controlMode, string $controlModel, string $controlUserMessageId, array $sessionMeta, string $mode): string {
     $stream = (function () use ($messages): iterable {
       foreach ($messages as $message) {
         yield $message;
       }
     })();
 
-    $client = new Client($options);
-    $client->connect($stream);
+    $client = null;
+    try {
+      $client = new Client($options);
+      $client->connect($stream);
 
-    $this->applyControl($client, $controlAction, $controlMode, $controlModel, $controlUserMessageId);
+      $this->applyControl($client, $controlAction, $controlMode, $controlModel, $controlUserMessageId);
 
-    $output = '';
-    foreach ($client->receiveMessages() as $message) {
-      $raw = $message->getRaw();
-      $this->recordSessionFromMessage($raw, $sessionMeta);
-      if (($raw['type'] ?? '') === 'assistant') {
-        $content = $raw['message']['content'] ?? [];
-        if (is_array($content)) {
-          foreach ($content as $block) {
-            if (($block['type'] ?? '') === 'text') {
-              $output .= (string) ($block['text'] ?? '');
+      $output = '';
+      foreach ($client->receiveMessages() as $message) {
+        $raw = $message->getRaw();
+        $this->recordSessionFromMessage($raw, $sessionMeta);
+        if (($raw['type'] ?? '') === 'assistant') {
+          $content = $raw['message']['content'] ?? [];
+          if (is_array($content)) {
+            foreach ($content as $block) {
+              if (($block['type'] ?? '') === 'text') {
+                $output .= (string) ($block['text'] ?? '');
+              }
             }
           }
         }
       }
+
+      return $output;
     }
-
-    $client->close();
-
-    return $output;
+    finally {
+      if ($client instanceof Client) {
+        $client->close();
+      }
+    }
   }
 
   private function runQuery(string $prompt, ClaudeAgentOptions $options, array $sessionMeta): string {
@@ -797,6 +814,17 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#step' => 0.1,
     ];
 
+    $form['options_advanced']['option_skip_initialize'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Skip client initialize control request'),
+      '#description' => $this->t('Workaround for environments where Claude CLI stream mode does not respond to initialize control requests.'),
+      '#options' => [
+        '0' => $this->t('No'),
+        '1' => $this->t('Yes'),
+      ],
+      '#default_value' => $form_state->getValue('option_skip_initialize') ?? ($mode === 'client' || $mode === 'terminal' ? '1' : '0'),
+    ];
+
     $form['options_advanced']['option_user'] = [
       '#type' => 'textfield',
       '#title' => $this->t('User'),
@@ -960,6 +988,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $options['initializeTimeout'] = $initializeTimeout;
     }
 
+    $options['skipInitialize'] = $this->parseBoolSelect($form_state->getValue('option_skip_initialize'));
+
     $user = trim((string) $form_state->getValue('option_user'));
     if ($user !== '') {
       $options['user'] = $user;
@@ -1054,7 +1084,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
           'content' => $text,
         ],
         'parent_tool_use_id' => null,
-        'session_id' => 'default',
       ];
     }
 
