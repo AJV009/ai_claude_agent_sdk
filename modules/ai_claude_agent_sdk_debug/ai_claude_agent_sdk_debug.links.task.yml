@@ -10,6 +10,12 @@ ai_claude_agent_sdk_debug.query_tab:
   base_route: ai_claude_agent_sdk_debug.page
   weight: 10
 
+ai_claude_agent_sdk_debug.session_query_tab:
+  route_name: ai_claude_agent_sdk_debug.session_query
+  title: 'Session exchange (query)'
+  base_route: ai_claude_agent_sdk_debug.page
+  weight: 15
+
 ai_claude_agent_sdk_debug.terminal_tab:
   route_name: ai_claude_agent_sdk_debug.terminal
   title: 'Terminal (Client)'

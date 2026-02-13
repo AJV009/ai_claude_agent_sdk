@@ -37,6 +37,16 @@
       const $chatSession = $('<code class="claude-agent-sdk-terminal-status"></code>');
       $chatControls.append($chatInput).append($chatSend);
       $chat.append($chatStatus).append($chatLog).append($chatControls).append($chatSession);
+      const $rawToggleInput = $rawToggle.find('input');
+      if ($rawToggleInput.length) {
+        $rawToggleInput.on('change', function () {
+          if (this.checked) {
+            $rawLog.show();
+          } else {
+            $rawLog.hide();
+          }
+        });
+      }
 
       if (debugMode === 'client' || debugMode === 'terminal') {
         if (debugMode === 'terminal') {
@@ -546,13 +556,3 @@
     }
   };
 })(Drupal, jQuery, once);
-      const $rawToggleInput = $form.find('.claude-agent-sdk-terminal-raw-toggle input');
-      if ($rawToggleInput.length) {
-        $rawToggleInput.on('change', function () {
-          if (this.checked) {
-            $rawLog.show();
-          } else {
-            $rawLog.hide();
-          }
-        });
-      }

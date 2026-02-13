@@ -67,48 +67,58 @@
 
         function render(rows) {
           tbody.innerHTML = '';
-          rows.forEach(function (row) {
+          const safeRows = Array.isArray(rows) ? rows : [];
+          safeRows.forEach(function (row) {
+            const item = row && typeof row === 'object' ? row : {};
             const tr = document.createElement('tr');
-            tr.innerHTML = [
-              row.pid,
-              row.etime,
-              row.cpu,
-              row.mem,
-              row.command,
-            ].map(function (value) {
-              return '<td style="padding:6px; border-bottom:1px solid #eee; font-family:monospace;">' +
-                Drupal.checkPlain(String(value || '')) +
-                '</td>';
-            }).join('');
+            [
+              item.pid,
+              item.etime,
+              item.cpu,
+              item.mem,
+              item.command,
+            ].forEach(function (value) {
+              const td = document.createElement('td');
+              td.style.padding = '6px';
+              td.style.borderBottom = '1px solid #eee';
+              td.style.fontFamily = 'monospace';
+              td.textContent = String(value || '');
+              tr.appendChild(td);
+            });
             tbody.appendChild(tr);
           });
         }
 
         function renderSessions(sessions) {
           sessionsBody.innerHTML = '';
-          if (!sessions || !sessions.length) {
+          const safeSessions = Array.isArray(sessions) ? sessions : [];
+          if (!safeSessions.length) {
             const tr = document.createElement('tr');
             tr.innerHTML = '<td colspan="6" style="padding:6px; border-bottom:1px solid #eee; font-family:monospace;">No sessions tracked yet.</td>';
             sessionsBody.appendChild(tr);
             return;
           }
 
-          sessions.forEach(function (session) {
+          safeSessions.forEach(function (session) {
+            const item = session && typeof session === 'object' ? session : {};
             const tr = document.createElement('tr');
-            const firstSeen = session.first_seen ? new Date(session.first_seen * 1000).toLocaleString() : '';
-            const lastSeen = session.last_seen ? new Date(session.last_seen * 1000).toLocaleString() : '';
-            tr.innerHTML = [
-              session.session_id,
-              session.mode || '',
-              session.source || '',
-              session.resume || '',
+            const firstSeen = item.first_seen ? new Date(item.first_seen * 1000).toLocaleString() : '';
+            const lastSeen = item.last_seen ? new Date(item.last_seen * 1000).toLocaleString() : '';
+            [
+              item.session_id,
+              item.mode || '',
+              item.source || '',
+              item.resume || '',
               firstSeen,
               lastSeen,
-            ].map(function (value) {
-              return '<td style="padding:6px; border-bottom:1px solid #eee; font-family:monospace;">' +
-                Drupal.checkPlain(String(value || '')) +
-                '</td>';
-            }).join('');
+            ].forEach(function (value) {
+              const td = document.createElement('td');
+              td.style.padding = '6px';
+              td.style.borderBottom = '1px solid #eee';
+              td.style.fontFamily = 'monospace';
+              td.textContent = String(value || '');
+              tr.appendChild(td);
+            });
             sessionsBody.appendChild(tr);
           });
         }

@@ -26,6 +26,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
   protected ClaudeAgentSdkAuthEnvResolver $authEnvResolver;
 
+  private ?string $lastSessionId = null;
+
   public function __construct(SessionTracker $sessionTracker, ClaudeAgentSdkProcessLimiter $processLimiter, ClaudeAgentSdkAuthEnvResolver $authEnvResolver) {
     $this->sessionTracker = $sessionTracker;
     $this->processLimiter = $processLimiter;
@@ -73,6 +75,17 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         '#markup' => $this->t('Single exchange (query). This page creates a new session for each request.'),
       ];
     }
+    elseif ($mode === 'session_query') {
+      $form['input_type'] = [
+        '#type' => 'hidden',
+        '#value' => 'string',
+      ];
+      $form['mode_notice'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Mode'),
+        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support and no streaming client.'),
+      ];
+    }
     elseif ($mode === 'terminal') {
       $form['input_type'] = [
         '#type' => 'hidden',
@@ -111,7 +124,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#required' => TRUE,
     ];
 
-    $form += $this->buildOptionsForm($form_state);
+    $form += $this->buildOptionsForm($form_state, $mode);
 
     $form['control_action'] = [
       '#type' => 'select',
@@ -125,7 +138,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         'rewind_files' => $this->t('Rewind Files'),
       ],
       '#default_value' => $form_state->getValue('control_action') ?? 'none',
-      '#access' => $mode !== 'query',
+      '#access' => !in_array($mode, ['query', 'session_query'], TRUE),
     ];
 
     $form['control_mode'] = [
@@ -165,7 +178,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#type' => 'details',
       '#title' => $this->t('Callbacks (Debug)'),
       '#open' => FALSE,
-      '#access' => $mode !== 'query',
+      '#access' => !in_array($mode, ['query', 'session_query'], TRUE),
     ];
 
     $form['callbacks']['can_use_tool'] = [
@@ -281,7 +294,9 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     }
 
     try {
-      if ($mode === 'query') {
+      $this->lastSessionId = null;
+
+      if ($mode === 'query' || $mode === 'session_query') {
         $output = $this->runQuery($promptRaw, $options, $sessionMeta);
       }
       else {
@@ -308,6 +323,11 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       }
 
       $form_state->set('ai_claude_agent_sdk_debug_output', $output);
+      if (is_string($this->lastSessionId) && $this->lastSessionId !== '') {
+        $this->messenger()->addStatus($this->t('Session ID: @session_id', [
+          '@session_id' => $this->lastSessionId,
+        ]));
+      }
       $form_state->setRebuild(TRUE);
     }
     catch (\Throwable $e) {
@@ -431,10 +451,11 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     if (!is_string($sessionId) || $sessionId === '' || $sessionId === 'default') {
       return;
     }
+    $this->lastSessionId = $sessionId;
     $this->sessionTracker->record($sessionId, $sessionMeta);
   }
 
-  private function buildOptionsForm(FormStateInterface $form_state): array {
+  private function buildOptionsForm(FormStateInterface $form_state, string $mode): array {
     $sdkConfig = $this->config('ai_claude_agent_sdk.settings');
 
     $form = [];
@@ -529,7 +550,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         '0' => $this->t('No'),
         '1' => $this->t('Yes'),
       ],
-      '#default_value' => $form_state->getValue('option_continue_conversation') ?? '0',
+      '#default_value' => $form_state->getValue('option_continue_conversation') ?? ($mode === 'session_query' ? '1' : '0'),
     ];
 
     $form['options_basic']['option_resume'] = [
