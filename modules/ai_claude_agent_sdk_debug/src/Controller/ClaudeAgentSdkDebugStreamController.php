@@ -67,6 +67,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       'mode' => is_string($payload['mode'] ?? null) ? (string) $payload['mode'] : 'client',
       'source' => 'stream',
       'resume' => is_string($optionsData['resume'] ?? null) ? (string) $optionsData['resume'] : null,
+      'uid' => $this->currentUser()->isAuthenticated() ? (int) $this->currentUser()->id() : null,
     ];
 
     $response = new StreamedResponse();

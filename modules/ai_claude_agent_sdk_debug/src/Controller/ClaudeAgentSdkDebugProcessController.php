@@ -104,6 +104,14 @@ final class ClaudeAgentSdkDebugProcessController extends ControllerBase {
     }
 
     $sessions = $this->sessionTracker->all();
+    $sessions = array_map(function (array $session): array {
+      $sessionId = (string) ($session['session_id'] ?? '');
+      if ($sessionId !== '') {
+        $session['view_url'] = Url::fromRoute('ai_claude_agent_sdk_debug.session_view', ['session_id' => $sessionId])->toString();
+        $session['delete_url'] = Url::fromRoute('ai_claude_agent_sdk_debug.session_delete_confirm', ['session_id' => $sessionId])->toString();
+      }
+      return $session;
+    }, $sessions);
 
     return new JsonResponse([
       'rows' => $rows,

@@ -439,10 +439,14 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
   }
 
   private function buildSessionMeta(string $mode, array $optionsData, string $source): array {
+    $uid = \Drupal::currentUser()->id();
+    $uid = is_numeric($uid) && (int) $uid > 0 ? (int) $uid : null;
+
     return [
       'mode' => $mode,
       'source' => $source,
       'resume' => is_string($optionsData['resume'] ?? null) ? (string) $optionsData['resume'] : null,
+      'uid' => $uid,
     ];
   }
 

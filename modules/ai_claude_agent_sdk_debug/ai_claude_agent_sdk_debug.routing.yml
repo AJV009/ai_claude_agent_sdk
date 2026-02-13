@@ -61,6 +61,28 @@ ai_claude_agent_sdk_debug.processes_data:
   options:
     _admin_route: TRUE
 
+ai_claude_agent_sdk_debug.session_view:
+  path: '/admin/config/ai/claude-agent-sdk/debug/session/{session_id}'
+  defaults:
+    _title: 'Claude Session'
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugSessionController::page'
+  requirements:
+    _permission: 'access claude agent sdk debug'
+    session_id: '[A-Za-z0-9-]+'
+  options:
+    _admin_route: TRUE
+
+ai_claude_agent_sdk_debug.session_delete_confirm:
+  path: '/admin/config/ai/claude-agent-sdk/debug/session/{session_id}/delete'
+  defaults:
+    _title: 'Delete session'
+    _form: '\Drupal\ai_claude_agent_sdk_debug\Form\ClaudeAgentSdkDebugSessionDeleteForm'
+  requirements:
+    _permission: 'access claude agent sdk debug'
+    session_id: '[A-Za-z0-9-]+'
+  options:
+    _admin_route: TRUE
+
 ai_claude_agent_sdk_debug.processes_kill:
   path: '/admin/config/ai/claude-agent-sdk/debug/processes/kill'
   defaults:

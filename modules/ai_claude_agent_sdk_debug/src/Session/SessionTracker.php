@@ -34,6 +34,7 @@ final class SessionTracker {
       'mode' => $metadata['mode'] ?? ($existing['mode'] ?? null),
       'source' => $metadata['source'] ?? ($existing['source'] ?? null),
       'resume' => $metadata['resume'] ?? ($existing['resume'] ?? null),
+      'uid' => $metadata['uid'] ?? ($existing['uid'] ?? null),
     ];
 
     $sessions = $this->prune($sessions);
@@ -51,6 +52,23 @@ final class SessionTracker {
     });
 
     return array_values($sessions);
+  }
+
+  public function get(string $sessionId): ?array {
+    $sessions = $this->state->get(self::STATE_KEY, []);
+    if (!is_array($sessions) || !is_array($sessions[$sessionId] ?? null)) {
+      return null;
+    }
+    return $sessions[$sessionId];
+  }
+
+  public function remove(string $sessionId): void {
+    $sessions = $this->state->get(self::STATE_KEY, []);
+    if (!is_array($sessions) || !array_key_exists($sessionId, $sessions)) {
+      return;
+    }
+    unset($sessions[$sessionId]);
+    $this->state->set(self::STATE_KEY, $sessions);
   }
 
   private function prune(array $sessions): array {

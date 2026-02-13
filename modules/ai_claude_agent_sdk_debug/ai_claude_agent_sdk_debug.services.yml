@@ -2,3 +2,6 @@ services:
   ai_claude_agent_sdk_debug.session_tracker:
     class: Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker
     arguments: ['@state']
+
+  ai_claude_agent_sdk_debug.session_file_store:
+    class: Drupal\ai_claude_agent_sdk_debug\Session\SessionFileStore

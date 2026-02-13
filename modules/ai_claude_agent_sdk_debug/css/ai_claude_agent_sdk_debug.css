@@ -86,3 +86,51 @@
 .claude-agent-sdk-terminal-line--system {
   color: #fbbf24;
 }
+
+.claude-agent-sdk-session-page .claude-session-row--primary td {
+  background: #fffdf5;
+  font-weight: 400;
+}
+
+.claude-agent-sdk-session-page .claude-session-row--secondary td {
+  background: #fafafa;
+  color: #666;
+  font-style: italic;
+}
+
+.claude-agent-sdk-session-page .claude-session-row--duplicate td {
+  border-left: 3px solid #d97706;
+}
+
+.claude-session-summary-cell .claude-session-summary-preview {
+  white-space: pre-wrap;
+}
+
+.claude-session-summary-cell details {
+  margin-top: 4px;
+}
+
+.claude-session-summary-cell .claude-session-summary-full {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.claude-session-show-full {
+  font-size: 11px;
+  color: #666;
+}
+
+.claude-session-show-full summary {
+  cursor: pointer;
+  display: inline;
+  list-style: none;
+}
+
+.claude-session-show-full summary::-webkit-details-marker {
+  display: none;
+}

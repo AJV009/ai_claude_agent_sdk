@@ -58,8 +58,10 @@
           '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Mode</th>' +
           '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Source</th>' +
           '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Resume</th>' +
+          '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">UID</th>' +
           '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">First Seen</th>' +
           '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Last Seen</th>' +
+          '<th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Actions</th>' +
           '</tr></thead><tbody></tbody>';
         container.appendChild(sessionsTable);
 
@@ -94,7 +96,7 @@
           const safeSessions = Array.isArray(sessions) ? sessions : [];
           if (!safeSessions.length) {
             const tr = document.createElement('tr');
-            tr.innerHTML = '<td colspan="6" style="padding:6px; border-bottom:1px solid #eee; font-family:monospace;">No sessions tracked yet.</td>';
+            tr.innerHTML = '<td colspan="8" style="padding:6px; border-bottom:1px solid #eee; font-family:monospace;">No sessions tracked yet.</td>';
             sessionsBody.appendChild(tr);
             return;
           }
@@ -109,6 +111,7 @@
               item.mode || '',
               item.source || '',
               item.resume || '',
+              item.uid || '',
               firstSeen,
               lastSeen,
             ].forEach(function (value) {
@@ -119,6 +122,29 @@
               td.textContent = String(value || '');
               tr.appendChild(td);
             });
+
+            const actions = document.createElement('td');
+            actions.style.padding = '6px';
+            actions.style.borderBottom = '1px solid #eee';
+
+            if (item.view_url) {
+              const view = document.createElement('a');
+              view.href = item.view_url;
+              view.target = '_blank';
+              view.rel = 'noopener noreferrer';
+              view.textContent = 'View';
+              view.style.marginRight = '8px';
+              actions.appendChild(view);
+            }
+
+            if (item.delete_url) {
+              const del = document.createElement('a');
+              del.href = item.delete_url;
+              del.textContent = 'Delete';
+              actions.appendChild(del);
+            }
+
+            tr.appendChild(actions);
             sessionsBody.appendChild(tr);
           });
         }

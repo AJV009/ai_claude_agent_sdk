@@ -20,3 +20,9 @@ processes:
   dependencies:
     - core/drupal
     - core/once
+
+session:
+  version: 1.x
+  css:
+    theme:
+      css/ai_claude_agent_sdk_debug.css: {}
