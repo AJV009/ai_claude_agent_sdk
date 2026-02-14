@@ -351,6 +351,11 @@
           options.permissionMode = permissionMode;
         }
 
+        const permissionPreset = String($form.find('[name="option_permission_preset"]').val() || '').trim();
+        if (permissionPreset) {
+          options.permissionPreset = permissionPreset;
+        }
+
         const maxTurns = String($form.find('[name="option_max_turns"]').val() || '').trim();
         if (maxTurns) {
           options.maxTurns = parseInt(maxTurns, 10);
@@ -594,7 +599,7 @@
         }
         const control = { action: action };
         if (action === 'set_permission_mode') {
-          control.mode = mode || 'auto';
+          control.mode = mode || 'default';
         }
         if (action === 'set_model') {
           control.model = model || null;

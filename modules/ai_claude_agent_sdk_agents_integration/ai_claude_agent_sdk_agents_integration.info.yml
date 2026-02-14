@@ -1,0 +1,11 @@
+name: AI Claude Agent SDK Agents Integration
+type: module
+description: Integrates AI Claude Agent SDK debug/query workflows with AI Agents and Tool API connector modules.
+core_version_requirement: ^11 || ^10
+package: AI
+dependencies:
+  - ai_claude_agent_sdk
+  - ai_claude_agent_sdk_debug
+  - ai_agents
+  - tool
+  - tool_ai_connector

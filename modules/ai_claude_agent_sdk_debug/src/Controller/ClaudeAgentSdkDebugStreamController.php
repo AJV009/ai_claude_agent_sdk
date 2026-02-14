@@ -11,6 +11,7 @@ use Claude\AgentSdk\Types\PermissionResultDeny;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\ai_claude_agent_sdk_debug\Session\SessionFileStore;
+use Drupal\ai_claude_agent_sdk_debug\Support\PermissionPresetHelper;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
@@ -161,6 +162,9 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
   }
 
   private function buildOptions(array $optionsData, array $debugCallbacks): ClaudeAgentOptions {
+    $permissionPresetResult = PermissionPresetHelper::apply($optionsData);
+    $optionsData = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $optionsData;
+
     $cliPath = $optionsData['cliPath'] ?? getenv('CLAUDE_CLI_PATH') ?: null;
     $cwd = $optionsData['cwd'] ?? DRUPAL_ROOT;
 
@@ -221,8 +225,8 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       $client->getMcpStatus();
     }
     elseif ($action === 'set_permission_mode') {
-      $mode = $control['mode'] ?? 'auto';
-      $client->setPermissionMode((string) $mode);
+      $mode = PermissionPresetHelper::normalizePermissionMode($control['mode'] ?? null);
+      $client->setPermissionMode($mode ?? 'default');
     }
     elseif ($action === 'set_model') {
       $model = $control['model'] ?? null;

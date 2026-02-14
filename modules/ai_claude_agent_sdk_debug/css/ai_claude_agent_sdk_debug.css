@@ -134,3 +134,19 @@
 .claude-session-show-full summary::-webkit-details-marker {
   display: none;
 }
+
+.ai-claude-agent-sdk-policy-preview {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #d7dde4;
+  border-radius: 4px;
+  background: #f8fafc;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+/* Gin sticky form actions hide non-primary submits; keep the tool picker opener visible. */
+.ai-claude-agent-sdk-debug-form input[name="open_tools_library"] {
+  display: inline-block !important;
+}

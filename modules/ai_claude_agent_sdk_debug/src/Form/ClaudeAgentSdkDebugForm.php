@@ -11,7 +11,9 @@ use Claude\AgentSdk\Types\PermissionResultAllow;
 use Claude\AgentSdk\Types\PermissionResultDeny;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
+use Drupal\ai_claude_agent_sdk_debug\Support\PermissionPresetHelper;
 use Drupal\Component\Serialization\Json;
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
@@ -77,7 +79,9 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
-        '#markup' => $this->t('Single exchange (query). This page creates a new session for each request.'),
+        '#markup' => $this->t('Single exchange (query). This page creates a new session for each request. For bridge tool-calling tests, use <a href=":terminal_url">Terminal (Client)</a>.', [
+          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
+        ]),
       ];
     }
     elseif ($mode === 'session_query') {
@@ -88,7 +92,9 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
-        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support and no streaming client.'),
+        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support and no streaming client. For bridge tool-calling tests, use <a href=":terminal_url">Terminal (Client)</a>.', [
+          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
+        ]),
       ];
     }
     elseif ($mode === 'terminal') {
@@ -126,7 +132,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#rows' => 10,
       '#description' => $this->t('For JSONL mode, provide one JSON object per line in CLI stream format. For DeepChat, provide full request JSON.'),
       '#default_value' => $form_state->getValue('prompt') ?? '',
-      '#required' => TRUE,
+      '#required' => FALSE,
     ];
 
     if ($mode === 'session_query') {
@@ -165,7 +171,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $form['control_mode'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Permission Mode'),
-      '#default_value' => $form_state->getValue('control_mode') ?? 'auto',
+      '#default_value' => PermissionPresetHelper::normalizePermissionMode($form_state->getValue('control_mode')) ?? 'default',
       '#states' => [
         'visible' => [
           ':input[name="control_action"]' => ['value' => 'set_permission_mode'],
@@ -283,7 +289,69 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     return $form;
   }
 
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    if (!$this->isPrimarySubmit($form_state)) {
+      return;
+    }
+
+    $buildInfo = $form_state->getBuildInfo();
+    $mode = (string) ($buildInfo['args'][0] ?? 'client');
+
+    $prompt = trim((string) $form_state->getValue('prompt'));
+    if ($prompt === '') {
+      $form_state->setErrorByName('prompt', $this->t('Prompt / Messages is required.'));
+      return;
+    }
+
+    if (!$this->isBridgeModeSupported($mode)) {
+      return;
+    }
+
+    $bridgeMode = $this->resolveBridgeMode($form_state, $mode);
+    if ($bridgeMode !== 'cli') {
+      return;
+    }
+
+    $selectedToolIds = $this->extractSelectedBridgeToolIds($form_state);
+    if (empty($selectedToolIds)) {
+      $form_state->setErrorByName('option_bridge_tools', $this->t('Select at least one tool for bridge mode.'));
+      return;
+    }
+
+    $supportedCount = 0;
+    foreach ($selectedToolIds as $toolId) {
+      if ($this->normalizeBridgeToolId($toolId) !== null) {
+        $supportedCount++;
+      }
+    }
+    if ($supportedCount === 0) {
+      $form_state->setErrorByName('option_bridge_tools', $this->t('Bridge mode requires at least one Tool API entry (tool IDs that start with <code>tool:</code>).'));
+    }
+  }
+
+  private function isPrimarySubmit(FormStateInterface $form_state): bool {
+    $triggeringElement = $form_state->getTriggeringElement();
+    if (!is_array($triggeringElement)) {
+      return TRUE;
+    }
+
+    $name = (string) ($triggeringElement['#name'] ?? '');
+    if (str_ends_with($name, '-ai-tools-library-update') || $name === 'open_tools_library') {
+      return FALSE;
+    }
+
+    $parents = $triggeringElement['#parents'] ?? [];
+    return $parents === ['actions', 'submit'] || $name === 'submit';
+  }
+
   public function submitForm(array &$form, FormStateInterface $form_state): void {
+    if (!$this->isPrimarySubmit($form_state)) {
+      $selectedBridgeTools = $this->extractSelectedBridgeToolIds($form_state);
+      $form_state->set('ai_claude_agent_sdk_debug_bridge_tools', $selectedBridgeTools);
+      $form_state->set('ai_claude_agent_sdk_debug_bridge_tool_config', $this->extractBridgeToolConfigs($form_state));
+      return;
+    }
+
     $buildInfo = $form_state->getBuildInfo();
     $mode = (string) ($buildInfo['args'][0] ?? 'client');
     $inputType = (string) $form_state->getValue('input_type');
@@ -293,9 +361,21 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $controlModel = (string) $form_state->getValue('control_model');
     $controlUserMessageId = (string) $form_state->getValue('control_user_message_id');
     $sessionContinue = $mode === 'session_query' ? (bool) $form_state->getValue('session_continue') : FALSE;
+    $bridgeMode = $this->resolveBridgeMode($form_state, $mode);
     $requestedResume = null;
 
-    $optionsData = $this->collectOptions($form_state);
+    $selectedBridgeTools = $this->extractSelectedBridgeToolIds($form_state);
+    if ($bridgeMode === 'cli' && empty($selectedBridgeTools)) {
+      $storedBridgeTools = $form_state->get('ai_claude_agent_sdk_debug_bridge_tools');
+      if (is_array($storedBridgeTools) && !empty($storedBridgeTools)) {
+        $selectedBridgeTools = array_values(array_filter($storedBridgeTools, 'is_string'));
+      }
+    }
+    $form_state->set('ai_claude_agent_sdk_debug_bridge_mode', $bridgeMode !== '' ? $bridgeMode : 'none');
+    $form_state->set('ai_claude_agent_sdk_debug_bridge_tools', $selectedBridgeTools);
+    $form_state->set('ai_claude_agent_sdk_debug_bridge_tool_config', $this->extractBridgeToolConfigs($form_state));
+
+    $optionsData = $this->collectOptions($form_state, $mode);
     if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['initializeTimeout'])) {
       // Keep client initialization failures fast in debug mode.
       $optionsData['initializeTimeout'] = 2.0;
@@ -329,6 +409,31 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         }
       }
       $form_state->set('ai_claude_agent_sdk_debug_session_continue', $sessionContinue);
+    }
+
+    $permissionPresetResult = PermissionPresetHelper::apply($optionsData);
+    $optionsData = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $optionsData;
+    $permissionPresetWarnings = is_array($permissionPresetResult['warnings'] ?? null) ? $permissionPresetResult['warnings'] : [];
+    foreach ($permissionPresetWarnings as $permissionPresetWarning) {
+      if (is_string($permissionPresetWarning) && $permissionPresetWarning !== '') {
+        $this->messenger()->addWarning($this->t('Permission preset warning: @warning', [
+          '@warning' => $permissionPresetWarning,
+        ]));
+      }
+    }
+
+    if (($optionsData['bridgeMode'] ?? null) === 'cli' && !empty($selectedBridgeTools)) {
+      $ignoredToolIds = [];
+      foreach ($selectedBridgeTools as $toolId) {
+        if ($this->normalizeBridgeToolId($toolId) === null) {
+          $ignoredToolIds[] = $toolId;
+        }
+      }
+      if (!empty($ignoredToolIds)) {
+        $this->messenger()->addWarning($this->t('Bridge mode ignored non-Tool-API entries: @tools', [
+          '@tools' => implode(', ', $ignoredToolIds),
+        ]));
+      }
     }
 
     $options = $this->buildOptions($optionsData, [
@@ -387,6 +492,11 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         throw new \RuntimeException(sprintf('Resume session mismatch: requested %s but Claude returned %s. Response rejected.', $requestedResume, $this->lastSessionId));
       }
 
+      if ($output === '') {
+        $output = '[No assistant text returned. The model may have only produced tool events. Check the Sessions debug view for full event details.]';
+        $this->messenger()->addWarning($this->t('No assistant text was returned. Check the Sessions debug view for tool events.'));
+      }
+
       $form_state->set('ai_claude_agent_sdk_debug_output', $output);
       if (is_string($this->lastSessionId) && $this->lastSessionId !== '') {
         $this->messenger()->addStatus($this->t('Session ID: @session_id', [
@@ -410,10 +520,57 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         '@message' => $e->getMessage(),
       ]);
       $this->messenger()->addError($this->t('SDK error: @msg', ['@msg' => $e->getMessage()]));
+      $form_state->setRebuild(TRUE);
     }
   }
 
+  public static function bridgeToolsElementAfterBuild(array $element, FormStateInterface $form_state): array {
+    if (isset($element['tools_library']['open_modal']['#attributes']['class']) && is_array($element['tools_library']['open_modal']['#attributes']['class'])) {
+      $classes = array_values(array_filter(
+        $element['tools_library']['open_modal']['#attributes']['class'],
+        static fn ($class): bool => !in_array((string) $class, ['js-form-submit', 'form-submit'], TRUE)
+      ));
+      $element['tools_library']['open_modal']['#attributes']['class'] = $classes;
+    }
+    if (isset($element['tools_library']['update_widget']['#submit']) && is_array($element['tools_library']['update_widget']['#submit'])) {
+      $element['tools_library']['update_widget']['#submit'][] = [self::class, 'bridgeToolsUpdateSubmit'];
+    }
+    return $element;
+  }
+
+  public static function bridgeToolsUpdateSubmit(array $form, FormStateInterface $form_state): void {
+    $userInput = $form_state->getUserInput();
+    if (!is_array($userInput)) {
+      return;
+    }
+
+    $raw = $userInput['tools'] ?? null;
+    $selected = [];
+
+    if (is_string($raw)) {
+      $parts = explode(',', $raw);
+      foreach ($parts as $part) {
+        $toolId = trim($part);
+        if ($toolId !== '') {
+          $selected[$toolId] = $toolId;
+        }
+      }
+    }
+    elseif (is_array($raw)) {
+      foreach ($raw as $value) {
+        if (is_string($value) && $value !== '') {
+          $selected[$value] = $value;
+        }
+      }
+    }
+
+    $form_state->set('ai_claude_agent_sdk_debug_bridge_tools', array_values($selected));
+  }
+
   private function buildOptions(array $optionsData, array $debugCallbacks): ClaudeAgentOptions {
+    $permissionPresetResult = PermissionPresetHelper::apply($optionsData);
+    $optionsData = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $optionsData;
+
     $cliPath = $optionsData['cliPath'] ?? getenv('CLAUDE_CLI_PATH') ?: null;
     $cwd = $optionsData['cwd'] ?? DRUPAL_ROOT;
 
@@ -527,6 +684,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       'mode' => $mode,
       'source' => $source,
       'resume' => is_string($optionsData['resume'] ?? null) ? (string) $optionsData['resume'] : null,
+      'bridge_mode' => is_string($optionsData['bridgeMode'] ?? null) ? (string) $optionsData['bridgeMode'] : null,
+      'bridge_allowed_tools' => is_array($optionsData['bridgeAllowedTools'] ?? null) ? array_values($optionsData['bridgeAllowedTools']) : [],
       'uid' => $uid,
     ];
   }
@@ -542,6 +701,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
   private function buildOptionsForm(FormStateInterface $form_state, string $mode): array {
     $sdkConfig = $this->config('ai_claude_agent_sdk.settings');
+    $bridgeSupported = $this->isBridgeModeSupported($mode);
 
     $form = [];
     $form['options_basic'] = [
@@ -599,16 +759,53 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       ],
     ];
 
+    $permissionModeDefault = PermissionPresetHelper::normalizePermissionMode($form_state->getValue('option_permission_mode')) ?? '';
     $form['options_basic']['option_permission_mode'] = [
       '#type' => 'select',
       '#title' => $this->t('Permission mode'),
       '#options' => [
         '' => $this->t('Use CLI default'),
-        'auto' => $this->t('Auto'),
-        'ask' => $this->t('Ask'),
-        'deny' => $this->t('Deny'),
+        'default' => $this->t('Default'),
+        'plan' => $this->t('Plan'),
+        'dontAsk' => $this->t('DontAsk'),
+        'acceptEdits' => $this->t('AcceptEdits'),
+        'bypassPermissions' => $this->t('BypassPermissions'),
+        'delegate' => $this->t('Delegate'),
       ],
-      '#default_value' => $form_state->getValue('option_permission_mode') ?? '',
+      '#default_value' => $permissionModeDefault,
+    ];
+
+    $permissionPresetDefault = (string) ($form_state->getValue('option_permission_preset') ?? 'none');
+    $form['options_basic']['option_permission_preset'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Permission preset'),
+      '#description' => $this->t('Quick policy presets for non-interactive testing in Terminal mode.'),
+      '#options' => [
+        'none' => $this->t('Manual (use fields below as-is)'),
+        'strict_deny' => $this->t('Strict deny'),
+        'ask' => $this->t('Ask'),
+        'bridge_only' => $this->t('Allow bridge command only'),
+        'bridge_plus_read' => $this->t('Allow bridge command + read helpers (pwd/ls)'),
+      ],
+      '#default_value' => $permissionPresetDefault,
+    ];
+
+    $bridgeModeForPreview = $this->resolveBridgeMode($form_state, $mode);
+    $previewInput = [
+      'permissionPreset' => $permissionPresetDefault,
+      'permissionMode' => (string) (PermissionPresetHelper::normalizePermissionMode($form_state->getValue('option_permission_mode')) ?? ''),
+      'settings' => trim((string) ($form_state->getValue('option_settings') ?? '')),
+      'allowedTools' => $this->parseLines($form_state->getValue('option_allowed_tools')),
+      'disallowedTools' => $this->parseLines($form_state->getValue('option_disallowed_tools')),
+      'bridgeMode' => $bridgeModeForPreview,
+    ];
+    $previewResult = PermissionPresetHelper::apply($previewInput);
+    $previewText = PermissionPresetHelper::formatPreview($previewResult['options'], $previewResult['warnings']);
+
+    $form['options_basic']['option_permission_policy_preview'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Effective policy preview'),
+      '#markup' => '<pre class="ai-claude-agent-sdk-policy-preview">' . Html::escape($previewText) . '</pre>',
     ];
 
     $form['options_basic']['option_max_turns'] = [
@@ -686,6 +883,138 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#default_value' => $form_state->getValue('option_enable_file_checkpointing') ?? '0',
     ];
 
+    if ($this->isBridgeIntegrationAvailable() && $bridgeSupported) {
+      $bridgeModeDefault = (string) ($form_state->getValue('option_bridge_mode') ?? $form_state->get('ai_claude_agent_sdk_debug_bridge_mode') ?? 'none');
+      $selectedBridgeTools = $this->extractSelectedBridgeToolIds($form_state);
+      $bridgeToolConfigs = $this->extractBridgeToolConfigs($form_state);
+      $toolDefinitions = $this->getAiToolDefinitions();
+
+      $form['options_bridge'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Bridge Mode'),
+        '#description' => $this->t('Use Drupal Tool API tools through the CLI bridge. Tool selection uses the same modal picker as AI Agents.'),
+        '#open' => $bridgeModeDefault !== 'none',
+      ];
+
+      $form['options_bridge']['option_bridge_mode'] = [
+        '#type' => 'select',
+        '#title' => $this->t('Bridge mode'),
+        '#options' => [
+          'none' => $this->t('Disabled'),
+          'cli' => $this->t('CLI bridge via Drush'),
+        ],
+        '#default_value' => $bridgeModeDefault,
+        '#description' => $this->t('When enabled, Claude is instructed to call Drupal tools using <code>drush ai-claude-agent-sdk:tool-run</code>.'),
+      ];
+
+      $form['options_bridge']['bridge_tools_box'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Allowed bridge tools'),
+        '#description' => $this->t('Select which tools Claude is allowed to invoke through bridge mode.'),
+        '#open' => TRUE,
+        '#states' => [
+          'visible' => [
+            ':input[name="option_bridge_mode"]' => ['value' => 'cli'],
+          ],
+        ],
+      ];
+
+      $form['options_bridge']['bridge_tools_box']['option_bridge_tools'] = [
+        '#type' => 'ai_tools_library',
+        '#title' => $this->t('Tools for bridge mode'),
+        '#default_value' => $selectedBridgeTools,
+        '#after_build' => [
+          [self::class, 'bridgeToolsElementAfterBuild'],
+        ],
+      ];
+
+      $form['options_bridge']['option_bridge_help'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Bridge compatibility'),
+        '#markup' => $this->t('Only Tool API entries (tool IDs prefixed with <code>tool:</code>) are enforced by this bridge mode.'),
+        '#states' => [
+          'visible' => [
+            ':input[name="option_bridge_mode"]' => ['value' => 'cli'],
+          ],
+        ],
+      ];
+
+      if (!empty($selectedBridgeTools)) {
+        $form['options_bridge']['option_bridge_tool_config'] = [
+          '#type' => 'details',
+          '#title' => $this->t('Bridge tool configuration'),
+          '#description' => $this->t('Optional per-tool guidance appended to the bridge instructions.'),
+          '#open' => FALSE,
+          '#tree' => TRUE,
+          '#states' => [
+            'visible' => [
+              ':input[name="option_bridge_mode"]' => ['value' => 'cli'],
+            ],
+          ],
+        ];
+
+        foreach ($selectedBridgeTools as $toolId) {
+          $toolKey = $this->bridgeToolKey($toolId);
+          $definition = is_array($toolDefinitions[$toolId] ?? null) ? $toolDefinitions[$toolId] : [];
+          $toolLabel = (string) ($definition['name'] ?? $toolId);
+          $toolDescription = trim((string) ($definition['description'] ?? ''));
+          $config = is_array($bridgeToolConfigs[$toolId] ?? null) ? $bridgeToolConfigs[$toolId] : [];
+
+          $form['options_bridge']['option_bridge_tool_config'][$toolKey] = [
+            '#type' => 'details',
+            '#title' => $toolLabel,
+            '#open' => FALSE,
+          ];
+
+          $form['options_bridge']['option_bridge_tool_config'][$toolKey]['tool_id'] = [
+            '#type' => 'hidden',
+            '#value' => $toolId,
+          ];
+
+          if ($toolDescription !== '') {
+            $form['options_bridge']['option_bridge_tool_config'][$toolKey]['description_current'] = [
+              '#type' => 'item',
+              '#title' => $this->t('Current description'),
+              '#markup' => $toolDescription,
+            ];
+          }
+
+          $form['options_bridge']['option_bridge_tool_config'][$toolKey]['description_override'] = [
+            '#type' => 'textarea',
+            '#title' => $this->t('Bridge description override'),
+            '#description' => $this->t('Optional custom description for this tool in bridge instructions.'),
+            '#rows' => 2,
+            '#default_value' => (string) ($config['description_override'] ?? ''),
+          ];
+
+          $form['options_bridge']['option_bridge_tool_config'][$toolKey]['args_example'] = [
+            '#type' => 'textarea',
+            '#title' => $this->t('Args example (JSON)'),
+            '#description' => $this->t('Optional JSON object example for <code>--args</code>.'),
+            '#rows' => 2,
+            '#default_value' => (string) ($config['args_example'] ?? ''),
+          ];
+        }
+      }
+    }
+    elseif ($this->isBridgeIntegrationAvailable()) {
+      $form['options_bridge_notice'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Bridge Mode'),
+        '#open' => FALSE,
+      ];
+      $form['options_bridge_notice']['message'] = [
+        '#type' => 'item',
+        '#markup' => $this->t('Bridge tool-calling is available in Client modes. Use <a href=":terminal_url">Terminal (Client)</a> for back-and-forth tool debugging.', [
+          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
+        ]),
+      ];
+      $form['options_bridge_notice']['option_bridge_mode'] = [
+        '#type' => 'hidden',
+        '#value' => 'none',
+      ];
+    }
+
     $form['options_advanced'] = [
       '#type' => 'details',
       '#title' => $this->t('Advanced Options'),
@@ -735,8 +1064,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
     $form['options_advanced']['option_settings'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Settings file'),
-      '#description' => $this->t('Path to a settings file to pass to Claude Code.'),
+      '#title' => $this->t('Settings (JSON or file path)'),
+      '#description' => $this->t('Inline JSON object or path to a settings file to pass to Claude Code.'),
       '#default_value' => $form_state->getValue('option_settings') ?? '',
     ];
 
@@ -848,7 +1177,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     return $form;
   }
 
-  private function collectOptions(FormStateInterface $form_state): array {
+  private function collectOptions(FormStateInterface $form_state, string $mode): array {
     $options = [];
 
     $cliPath = trim((string) $form_state->getValue('option_cli_path'));
@@ -877,9 +1206,14 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       }
     }
 
-    $permissionMode = (string) $form_state->getValue('option_permission_mode');
-    if ($permissionMode !== '') {
+    $permissionMode = PermissionPresetHelper::normalizePermissionMode($form_state->getValue('option_permission_mode'));
+    if ($permissionMode !== null) {
       $options['permissionMode'] = $permissionMode;
+    }
+
+    $permissionPreset = trim((string) $form_state->getValue('option_permission_preset'));
+    if ($permissionPreset !== '') {
+      $options['permissionPreset'] = $permissionPreset;
     }
 
     $maxTurns = $this->parseNumber($form_state->getValue('option_max_turns'));
@@ -1005,7 +1339,317 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $options['extraArgs'] = $extraArgs;
     }
 
+    return $this->applyBridgeModeOptions($options, $form_state, $mode);
+  }
+
+  private function applyBridgeModeOptions(array $options, FormStateInterface $form_state, string $mode): array {
+    $bridgeMode = $this->resolveBridgeMode($form_state, $mode);
+    if ($bridgeMode !== 'cli') {
+      return $options;
+    }
+
+    $selectedToolIds = $this->extractSelectedBridgeToolIds($form_state);
+    $bridgeToolConfigs = $this->extractBridgeToolConfigs($form_state);
+    $toolDefinitions = $this->getAiToolDefinitions();
+
+    $bridgeTools = [];
+    foreach ($selectedToolIds as $toolId) {
+      $toolApiId = $this->normalizeBridgeToolId($toolId);
+      if ($toolApiId === null) {
+        continue;
+      }
+      $config = is_array($bridgeToolConfigs[$toolId] ?? null) ? $bridgeToolConfigs[$toolId] : [];
+      $definition = is_array($toolDefinitions[$toolId] ?? null) ? $toolDefinitions[$toolId] : [];
+      $bridgeTools[$toolApiId] = [
+        'selected_id' => $toolId,
+        'tool_api_id' => $toolApiId,
+        'tool_label' => trim((string) ($definition['name'] ?? '')),
+        'description_override' => trim((string) ($config['description_override'] ?? '')),
+        'args_example' => trim((string) ($config['args_example'] ?? '')),
+      ];
+    }
+
+    if (empty($bridgeTools)) {
+      return $options;
+    }
+
+    $bridgePrompt = $this->buildBridgeSystemPrompt(array_values($bridgeTools));
+    if ($bridgePrompt !== '') {
+      $existingSystemPrompt = trim((string) ($options['systemPrompt'] ?? ''));
+      $options['systemPrompt'] = $existingSystemPrompt !== ''
+        ? $existingSystemPrompt . "\n\n" . $bridgePrompt
+        : $bridgePrompt;
+    }
+
+    $env = is_array($options['env'] ?? null) ? $options['env'] : [];
+    $env['AI_CLAUDE_AGENT_SDK_BRIDGE_MODE'] = 'cli';
+    $env['AI_CLAUDE_AGENT_SDK_BRIDGE_ALLOWED_TOOLS'] = implode(',', array_keys($bridgeTools));
+    $env['AI_CLAUDE_AGENT_SDK_BRIDGE_UID'] = $this->currentUser()->isAuthenticated() ? (string) $this->currentUser()->id() : '';
+    $options['env'] = $env;
+
+    if (!isset($options['permissionMode']) || trim((string) $options['permissionMode']) === '') {
+      // Bridge mode relies on Bash/Drush orchestration; default to CLI default permission behavior unless explicitly overridden.
+      $options['permissionMode'] = 'default';
+    }
+
+    if (isset($options['allowedTools']) && is_array($options['allowedTools']) && !in_array('Bash', $options['allowedTools'], TRUE)) {
+      $options['allowedTools'][] = 'Bash';
+    }
+    if (isset($options['tools']) && is_array($options['tools']) && !in_array('Bash', $options['tools'], TRUE)) {
+      $options['tools'][] = 'Bash';
+    }
+
+    $options['bridgeMode'] = 'cli';
+    $options['bridgeAllowedTools'] = array_keys($bridgeTools);
+
     return $options;
+  }
+
+  private function buildBridgeSystemPrompt(array $bridgeTools): string {
+    if (empty($bridgeTools)) {
+      return '';
+    }
+
+    $lines = [
+      'Drupal Tool API bridge mode is enabled.',
+      'Selected bridge tools are available through Bash command execution.',
+      'Use this command to run Drupal tools:',
+      "drush ai-claude-agent-sdk:tool-run tool_api:<tool_id> --args='{\"key\":\"value\"}'",
+      'Only use these tool_id values:',
+    ];
+
+    foreach ($bridgeTools as $bridgeTool) {
+      $toolApiId = (string) ($bridgeTool['tool_api_id'] ?? '');
+      if ($toolApiId === '') {
+        continue;
+      }
+      $label = trim((string) ($bridgeTool['tool_label'] ?? ''));
+      $selectedId = trim((string) ($bridgeTool['selected_id'] ?? ''));
+      if ($label !== '' || $selectedId !== '') {
+        $parts = [];
+        if ($label !== '') {
+          $parts[] = 'label: ' . $label;
+        }
+        if ($selectedId !== '') {
+          $parts[] = 'picker_id: ' . $selectedId;
+        }
+        $lines[] = '- ' . $toolApiId . ' (' . implode(', ', $parts) . ')';
+      }
+      else {
+        $lines[] = '- ' . $toolApiId;
+      }
+      $descriptionOverride = trim((string) ($bridgeTool['description_override'] ?? ''));
+      if ($descriptionOverride !== '') {
+        $lines[] = '  description: ' . $descriptionOverride;
+      }
+      $argsExample = trim((string) ($bridgeTool['args_example'] ?? ''));
+      if ($argsExample !== '') {
+        $lines[] = '  args_example: ' . $argsExample;
+      }
+    }
+
+    $lines[] = 'Never call a tool outside this allowlist.';
+    $lines[] = 'Always pass --args as a valid JSON object (use {} for tools without inputs).';
+    $lines[] = 'This runs inside the Drupal container; use drush directly and do not prepend ddev unless absolutely required.';
+    $lines[] = 'Do not claim tools are unavailable if they appear in this allowlist; call them through the bridge command.';
+
+    return implode("\n", $lines);
+  }
+
+  private function isBridgeIntegrationAvailable(): bool {
+    return \Drupal::moduleHandler()->moduleExists('ai_claude_agent_sdk_agents_integration');
+  }
+
+  private function extractSelectedBridgeToolIds(FormStateInterface $form_state): array {
+    $value = $form_state->getValue('option_bridge_tools');
+    if ($this->isEmptyToolsValue($value)) {
+      $value = $form_state->getValue('tools');
+    }
+    if ($this->isEmptyToolsValue($value)) {
+      $value = $form_state->getValue([
+        'options_bridge',
+        'bridge_tools_box',
+        'option_bridge_tools',
+      ]);
+    }
+    if ($this->isEmptyToolsValue($value)) {
+      $userInput = $form_state->getUserInput();
+      if (is_array($userInput)) {
+        $value = $this->extractBridgeToolsFromUserInput($userInput);
+      }
+    }
+    if ($this->isEmptyToolsValue($value)) {
+      $requestInput = \Drupal::request()->request->all();
+      if (is_array($requestInput)) {
+        $value = $this->extractBridgeToolsFromUserInput($requestInput);
+      }
+    }
+    if ($this->isEmptyToolsValue($value)) {
+      $value = $form_state->get('ai_claude_agent_sdk_debug_bridge_tools');
+    }
+    return $this->normalizeToolsLibraryValue($value);
+  }
+
+  private function extractBridgeToolsFromUserInput(array $userInput): mixed {
+    $candidates = [
+      $userInput['tools'] ?? null,
+      $userInput['option_bridge_tools'] ?? null,
+      $userInput['option_bridge_tools']['tools'] ?? null,
+      $userInput['options_bridge']['bridge_tools_box']['option_bridge_tools'] ?? null,
+      $userInput['options_bridge']['bridge_tools_box']['option_bridge_tools']['tools'] ?? null,
+    ];
+
+    foreach ($candidates as $candidate) {
+      if ($candidate !== null && $candidate !== '') {
+        return $candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private function isEmptyToolsValue(mixed $value): bool {
+    if ($value === null) {
+      return true;
+    }
+    if (is_string($value)) {
+      return trim($value) === '';
+    }
+    if (is_array($value)) {
+      return empty($this->normalizeToolsLibraryValue($value));
+    }
+    return false;
+  }
+
+  private function resolveBridgeMode(FormStateInterface $form_state, string $mode): string {
+    if (!$this->isBridgeModeSupported($mode)) {
+      return 'none';
+    }
+
+    $value = $form_state->getValue('option_bridge_mode');
+    if (is_string($value) && $value !== '') {
+      return $value;
+    }
+
+    $stored = $form_state->get('ai_claude_agent_sdk_debug_bridge_mode');
+    if (is_string($stored) && $stored !== '') {
+      return $stored;
+    }
+
+    return 'none';
+  }
+
+  private function isBridgeModeSupported(string $mode): bool {
+    return in_array($mode, ['client', 'terminal'], TRUE);
+  }
+
+  private function extractBridgeToolConfigs(FormStateInterface $form_state): array {
+    $raw = $form_state->getValue('option_bridge_tool_config');
+    if (!is_array($raw)) {
+      $raw = $form_state->get('ai_claude_agent_sdk_debug_bridge_tool_config');
+    }
+    if (!is_array($raw)) {
+      return [];
+    }
+
+    $configs = [];
+    foreach ($raw as $item) {
+      if (!is_array($item)) {
+        continue;
+      }
+      $toolId = trim((string) ($item['tool_id'] ?? ''));
+      if ($toolId === '') {
+        continue;
+      }
+
+      $configs[$toolId] = [
+        'description_override' => trim((string) ($item['description_override'] ?? '')),
+        'args_example' => trim((string) ($item['args_example'] ?? '')),
+      ];
+    }
+
+    return $configs;
+  }
+
+  private function normalizeToolsLibraryValue(mixed $value): array {
+    $out = [];
+
+    if (is_string($value)) {
+      $parts = explode(',', $value);
+      foreach ($parts as $part) {
+        $toolId = trim($part);
+        if ($toolId !== '') {
+          $out[$toolId] = $toolId;
+        }
+      }
+      return array_values($out);
+    }
+
+    if (is_array($value)) {
+      if (array_key_exists('tools', $value)) {
+        foreach ($this->normalizeToolsLibraryValue($value['tools']) as $toolId) {
+          $out[$toolId] = $toolId;
+        }
+      }
+
+      foreach ($value as $key => $item) {
+        if ($key === 'tools') {
+          continue;
+        }
+
+        if (is_string($item)) {
+          foreach ($this->normalizeToolsLibraryValue($item) as $toolId) {
+            $out[$toolId] = $toolId;
+          }
+          continue;
+        }
+
+        if (is_array($item)) {
+          foreach ($this->normalizeToolsLibraryValue($item) as $toolId) {
+            $out[$toolId] = $toolId;
+          }
+          continue;
+        }
+
+        if (is_bool($item) && $item && is_string($key) && $key !== '') {
+          $out[$key] = $key;
+        }
+      }
+    }
+
+    return array_values($out);
+  }
+
+  private function normalizeBridgeToolId(string $toolId): ?string {
+    $toolId = trim($toolId);
+    if ($toolId === '') {
+      return null;
+    }
+
+    if (str_starts_with($toolId, 'tool:')) {
+      $toolId = substr($toolId, 5);
+    }
+    elseif (str_starts_with($toolId, 'tool_api:')) {
+      $toolId = substr($toolId, 9);
+    }
+
+    if ($toolId === '') {
+      return null;
+    }
+
+    return preg_match('/^[a-zA-Z0-9_]+$/', $toolId) ? $toolId : null;
+  }
+
+  private function bridgeToolKey(string $toolId): string {
+    return preg_replace('/[^a-zA-Z0-9_]+/', '_', $toolId) ?? $toolId;
+  }
+
+  private function getAiToolDefinitions(): array {
+    if (!\Drupal::hasService('plugin.manager.ai.function_calls')) {
+      return [];
+    }
+    $definitions = \Drupal::service('plugin.manager.ai.function_calls')->getDefinitions();
+    return is_array($definitions) ? $definitions : [];
   }
 
   private function parseLines($value): array {
@@ -1098,7 +1742,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $client->getMcpStatus();
     }
     elseif ($action === 'set_permission_mode') {
-      $client->setPermissionMode($mode !== '' ? $mode : 'auto');
+      $normalizedMode = PermissionPresetHelper::normalizePermissionMode($mode);
+      $client->setPermissionMode($normalizedMode ?? 'default');
     }
     elseif ($action === 'set_model') {
       $client->setModel($model !== '' ? $model : null);
