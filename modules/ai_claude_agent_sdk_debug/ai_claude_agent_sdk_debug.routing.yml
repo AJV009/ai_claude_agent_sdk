@@ -99,3 +99,10 @@ ai_claude_agent_sdk_debug.stream:
     _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugStreamController::stream'
   requirements:
     _permission: 'access claude agent sdk debug'
+
+ai_claude_agent_sdk_debug.permission_decision:
+  path: '/admin/config/ai/claude-agent-sdk/debug/permission-decision'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugStreamController::permissionDecision'
+  requirements:
+    _permission: 'access claude agent sdk debug'

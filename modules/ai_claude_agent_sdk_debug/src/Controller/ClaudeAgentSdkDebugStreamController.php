@@ -14,19 +14,30 @@ use Drupal\ai_claude_agent_sdk_debug\Session\SessionFileStore;
 use Drupal\ai_claude_agent_sdk_debug\Support\PermissionPresetHelper;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
+use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
 use Drupal\ai_claude_agent_sdk_debug\Session\SessionTracker;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
+
+  private KeyValueStoreExpirableInterface $permissionDecisions;
+
+  private KeyValueStoreExpirableInterface $sessionPermissionGrants;
 
   public function __construct(
     private readonly SessionTracker $sessionTracker,
     private readonly SessionFileStore $sessionFileStore,
     private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
     private readonly ClaudeAgentSdkAuthEnvResolver $authEnvResolver,
-  ) {}
+    KeyValueExpirableFactoryInterface $keyValueExpirableFactory,
+  ) {
+    $this->permissionDecisions = $keyValueExpirableFactory->get('ai_claude_agent_sdk_debug.permission_decisions');
+    $this->sessionPermissionGrants = $keyValueExpirableFactory->get('ai_claude_agent_sdk_debug.session_permission_grants');
+  }
 
   public static function create(ContainerInterface $container): self {
     return new self(
@@ -34,6 +45,7 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       $container->get('ai_claude_agent_sdk_debug.session_file_store'),
       $container->get('ai_claude_agent_sdk.process_limiter'),
       $container->get('ai_claude_agent_sdk.auth_env_resolver'),
+      $container->get('keyvalue.expirable'),
     );
   }
 
@@ -66,7 +78,9 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       }, 400);
     }
 
-    $options = $this->buildOptions($optionsData, $payload['debug_callbacks'] ?? []);
+    $debugCallbacks = is_array($payload['debug_callbacks'] ?? null) ? $payload['debug_callbacks'] : [];
+    $runtimeId = is_string($payload['runtime_id'] ?? null) ? trim((string) $payload['runtime_id']) : '';
+    $requestingUid = $this->currentUser()->isAuthenticated() ? (int) $this->currentUser()->id() : 0;
     $messages = $payload['messages'] ?? [];
     if (!is_array($messages)) {
       $messages = [];
@@ -97,7 +111,11 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     $response->headers->set('Connection', 'keep-alive');
     $response->headers->set('X-Accel-Buffering', 'no');
 
-    $response->setCallback(function () use ($options, $messages, $control, $sessionId, $sessionMeta, $requestedResume, $mode) {
+    $response->setCallback(function () use ($optionsData, $debugCallbacks, $runtimeId, $requestingUid, $messages, $control, $sessionId, $sessionMeta, $requestedResume, $mode) {
+      if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+      }
+
       $emit = function (array $payload): void {
         echo 'data: ' . Json::encode($payload) . "\n\n";
         if (function_exists('ob_flush')) {
@@ -117,6 +135,13 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
         return;
       }
 
+      $options = $this->buildOptions(
+        $optionsData,
+        $debugCallbacks,
+        $emit,
+        $runtimeId,
+        $requestingUid
+      );
       $client = new Client($options);
 
       $stream = (function () use ($messages): iterable {
@@ -161,14 +186,20 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     return $response;
   }
 
-  private function buildOptions(array $optionsData, array $debugCallbacks): ClaudeAgentOptions {
+  private function buildOptions(
+    array $optionsData,
+    array $debugCallbacks,
+    ?callable $permissionRequestEmitter = null,
+    string $runtimeId = '',
+    int $requestingUid = 0,
+  ): ClaudeAgentOptions {
     $permissionPresetResult = PermissionPresetHelper::apply($optionsData);
     $optionsData = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $optionsData;
 
     $cliPath = $optionsData['cliPath'] ?? getenv('CLAUDE_CLI_PATH') ?: null;
     $cwd = $optionsData['cwd'] ?? DRUPAL_ROOT;
 
-    $canUseTool = $this->buildCanUseToolCallback($debugCallbacks);
+    $canUseTool = $this->buildCanUseToolCallback($debugCallbacks, $permissionRequestEmitter, $runtimeId, $requestingUid);
     $hooks = $this->buildHookConfig($debugCallbacks);
     $mcpHandler = $this->buildMcpHandler($debugCallbacks);
 
@@ -240,7 +271,12 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
     }
   }
 
-  private function buildCanUseToolCallback(array $debugCallbacks): ?callable {
+  private function buildCanUseToolCallback(
+    array $debugCallbacks,
+    ?callable $permissionRequestEmitter = null,
+    string $runtimeId = '',
+    int $requestingUid = 0,
+  ): ?callable {
     $mode = $debugCallbacks['can_use_tool'] ?? 'none';
     if ($mode === 'none') {
       return null;
@@ -260,7 +296,120 @@ final class ClaudeAgentSdkDebugStreamController extends ControllerBase {
       };
     }
 
+    if ($mode === 'interactive') {
+      return function (string $toolName, array $input, $context) use ($permissionRequestEmitter, $runtimeId, $requestingUid) {
+        if ($runtimeId !== '' && $requestingUid > 0 && $this->hasSessionPermissionGrant($requestingUid, $runtimeId, $toolName)) {
+          return new PermissionResultAllow();
+        }
+
+        if ($permissionRequestEmitter === null) {
+          return new PermissionResultDeny('Interactive permission requested but no stream emitter is available.', false);
+        }
+
+        $requestId = 'perm_' . bin2hex(random_bytes(8));
+        $requestPayload = [
+          'request_id' => $requestId,
+          'tool_name' => $toolName,
+          'input' => $input,
+          'runtime_id' => $runtimeId,
+          'uid' => $requestingUid,
+        ];
+
+        $permissionRequestEmitter([
+          'permission_request' => $requestPayload,
+          'status' => 'permission_required',
+        ]);
+
+        $decision = $this->awaitPermissionDecision($requestId, 120);
+        if ($decision === null) {
+          return new PermissionResultDeny('Permission request timed out.', true);
+        }
+
+        $decisionType = (string) ($decision['decision'] ?? 'deny');
+        if ($decisionType === 'allow_session') {
+          if ($runtimeId !== '' && $requestingUid > 0) {
+            $this->setSessionPermissionGrant($requestingUid, $runtimeId, $toolName);
+          }
+          return new PermissionResultAllow();
+        }
+
+        if ($decisionType === 'allow_once') {
+          return new PermissionResultAllow();
+        }
+
+        $message = trim((string) ($decision['message'] ?? 'Denied by user.'));
+        $interrupt = (bool) ($decision['interrupt'] ?? false);
+        return new PermissionResultDeny($message !== '' ? $message : 'Denied by user.', $interrupt);
+      };
+    }
+
     return null;
+  }
+
+  public function permissionDecision(Request $request): JsonResponse {
+    $payload = Json::decode($request->getContent() ?? '');
+    if (!is_array($payload)) {
+      return new JsonResponse(['ok' => false, 'error' => 'Invalid JSON body.'], 400);
+    }
+
+    $requestId = trim((string) ($payload['request_id'] ?? ''));
+    $decision = trim((string) ($payload['decision'] ?? ''));
+    if ($requestId === '' || $decision === '') {
+      return new JsonResponse(['ok' => false, 'error' => 'request_id and decision are required.'], 400);
+    }
+
+    $allowedDecisions = ['allow_once', 'allow_session', 'deny'];
+    if (!in_array($decision, $allowedDecisions, true)) {
+      return new JsonResponse(['ok' => false, 'error' => 'Unsupported decision value.'], 400);
+    }
+
+    $uid = $this->currentUser()->isAuthenticated() ? (int) $this->currentUser()->id() : 0;
+    $this->permissionDecisions->set($requestId, [
+      'decision' => $decision,
+      'message' => trim((string) ($payload['message'] ?? '')),
+      'interrupt' => (bool) ($payload['interrupt'] ?? false),
+      'uid' => $uid,
+      'created' => time(),
+    ], 600);
+
+    return new JsonResponse(['ok' => true]);
+  }
+
+  private function awaitPermissionDecision(string $requestId, int $timeoutSeconds): ?array {
+    $deadline = time() + max(1, $timeoutSeconds);
+    while (time() <= $deadline) {
+      $decision = $this->permissionDecisions->get($requestId);
+      if (is_array($decision)) {
+        $this->permissionDecisions->delete($requestId);
+        return $decision;
+      }
+      usleep(200000);
+    }
+
+    return null;
+  }
+
+  private function hasSessionPermissionGrant(int $uid, string $runtimeId, string $toolName): bool {
+    if ($uid <= 0 || $runtimeId === '' || $toolName === '') {
+      return false;
+    }
+    return is_array($this->sessionPermissionGrants->get($this->sessionGrantKey($uid, $runtimeId, $toolName)));
+  }
+
+  private function setSessionPermissionGrant(int $uid, string $runtimeId, string $toolName): void {
+    if ($uid <= 0 || $runtimeId === '' || $toolName === '') {
+      return;
+    }
+    $this->sessionPermissionGrants->set($this->sessionGrantKey($uid, $runtimeId, $toolName), [
+      'uid' => $uid,
+      'runtime_id' => $runtimeId,
+      'tool_name' => $toolName,
+      'created' => time(),
+    ], 28800);
+  }
+
+  private function sessionGrantKey(int $uid, string $runtimeId, string $toolName): string {
+    return hash('sha256', $uid . ':' . $runtimeId . ':' . $toolName);
   }
 
   private function buildHookConfig(array $debugCallbacks): ?array {

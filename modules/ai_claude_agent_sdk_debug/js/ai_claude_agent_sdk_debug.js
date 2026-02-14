@@ -24,6 +24,8 @@
         return 'client';
       })();
       const debugMode = modeFromSettings || modeFromPath;
+      const permissionDecisionUrl = (drupalSettings && drupalSettings.claudeAgentSdkDebug && drupalSettings.claudeAgentSdkDebug.permissionDecisionUrl) || '';
+      const runtimeId = 'runtime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 
       const $streamButton = $('<button type="button" class="button">Stream via SSE</button>');
       const $output = $('<textarea readonly rows="12" style="width:100%;"></textarea>');
@@ -49,6 +51,25 @@
       const $rawToggle = $('<label class="claude-agent-sdk-terminal-status claude-agent-sdk-terminal-raw-toggle"><input type="checkbox"> Show raw SSE log</label>');
       const $rawLog = $('<div class="claude-agent-sdk-terminal-raw" style="display:none;"></div>');
       const $chatSession = $('<code class="claude-agent-sdk-terminal-status"></code>');
+
+      const permissionQueue = [];
+      let activePermissionRequest = null;
+      const $permissionModal = $('<div class="claude-agent-sdk-permission-modal" style="display:none;"></div>');
+      const $permissionPanel = $('<div class="claude-agent-sdk-permission-panel"></div>');
+      const $permissionTitle = $('<h3>Tool Permission Required</h3>');
+      const $permissionBody = $('<div class="claude-agent-sdk-permission-body"></div>');
+      const $permissionTool = $('<div class="claude-agent-sdk-permission-tool"></div>');
+      const $permissionInput = $('<pre class="claude-agent-sdk-permission-input"></pre>');
+      const $permissionActions = $('<div class="claude-agent-sdk-permission-actions"></div>');
+      const $permissionAllowOnce = $('<button type="button" class="button button--primary">Allow once</button>');
+      const $permissionAllowSession = $('<button type="button" class="button">Allow for session</button>');
+      const $permissionDeny = $('<button type="button" class="button">Deny</button>');
+
+      $permissionActions.append($permissionAllowOnce).append($permissionAllowSession).append($permissionDeny);
+      $permissionBody.append($permissionTool).append($permissionInput);
+      $permissionPanel.append($permissionTitle).append($permissionBody).append($permissionActions);
+      $permissionModal.append($permissionPanel);
+      $('body').append($permissionModal);
       $chatControls.append($chatInput).append($chatSend);
       $chat.append($chatStatus).append($chatLog).append($chatControls).append($chatSession);
       const $rawToggleInput = $rawToggle.find('input');
@@ -61,6 +82,16 @@
           }
         });
       }
+
+      $permissionAllowOnce.on('click', function () {
+        submitPermissionDecision('allow_once');
+      });
+      $permissionAllowSession.on('click', function () {
+        submitPermissionDecision('allow_session');
+      });
+      $permissionDeny.on('click', function () {
+        submitPermissionDecision('deny');
+      });
 
       if (debugMode === 'client' || debugMode === 'terminal') {
         if (debugMode === 'terminal') {
@@ -127,6 +158,9 @@
                   const json = part.slice(6);
                   try {
                     const data = JSON.parse(json);
+                    if (data.permission_request) {
+                      queuePermissionRequest(data.permission_request);
+                    }
                     if (data.message) {
                       $output.val($output.val() + JSON.stringify(data.message) + "\n");
                     }
@@ -209,6 +243,9 @@
                     if (data.status) {
                       setStatus(data.status);
                     }
+                    if (data.permission_request) {
+                      queuePermissionRequest(data.permission_request);
+                    }
                     if (data.message) {
                       const text = extractAssistantText(data.message);
                       if (text) {
@@ -272,6 +309,7 @@
 
         return {
           mode: debugMode,
+          runtime_id: runtimeId,
           options: options,
           messages: messages,
           control: control,
@@ -306,6 +344,7 @@
 
         const payload = {
           mode: debugMode,
+          runtime_id: runtimeId,
           options: options,
           messages: messages,
           control: null,
@@ -535,6 +574,69 @@
         const $line = $('<div></div>').html(safe);
         $rawLog.append($line);
         $rawLog.scrollTop($rawLog[0].scrollHeight);
+      }
+
+      function queuePermissionRequest(request) {
+        if (!request || !request.request_id) {
+          return;
+        }
+        permissionQueue.push(request);
+        appendTerminalLine('Permission request for tool: ' + String(request.tool_name || 'unknown'), 'system');
+        if (!activePermissionRequest) {
+          showNextPermissionRequest();
+        }
+      }
+
+      function showNextPermissionRequest() {
+        if (activePermissionRequest || !permissionQueue.length) {
+          return;
+        }
+
+        activePermissionRequest = permissionQueue.shift();
+        const toolName = String(activePermissionRequest.tool_name || 'unknown');
+        const input = activePermissionRequest.input && typeof activePermissionRequest.input === 'object'
+          ? JSON.stringify(activePermissionRequest.input, null, 2)
+          : String(activePermissionRequest.input || '{}');
+
+        $permissionTool.text('Tool: ' + toolName);
+        $permissionInput.text(input);
+        $permissionModal.show();
+        setStatus('Awaiting permission');
+      }
+
+      function submitPermissionDecision(decision) {
+        if (!activePermissionRequest) {
+          return;
+        }
+        if (!permissionDecisionUrl) {
+          appendTerminalLine('ERROR: Permission decision URL is not configured.', 'error');
+          return;
+        }
+
+        const requestId = String(activePermissionRequest.request_id || '');
+        fetch(permissionDecisionUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: requestId,
+            decision: decision,
+            runtime_id: runtimeId
+          }),
+        }).then(function (response) {
+          if (!response.ok) {
+            return response.text().then(function (text) {
+              throw new Error(text || ('HTTP ' + response.status));
+            });
+          }
+          appendTerminalLine('Permission decision submitted: ' + decision, 'system');
+        }).catch(function (error) {
+          appendTerminalLine('ERROR: Failed to submit permission decision: ' + error.message, 'error');
+        }).finally(function () {
+          activePermissionRequest = null;
+          $permissionModal.hide();
+          setStatus('Running');
+          showNextPermissionRequest();
+        });
       }
 
       function extractAssistantText(message) {

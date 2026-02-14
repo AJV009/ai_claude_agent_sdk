@@ -60,6 +60,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $form['#attached']['library'][] = 'ai_claude_agent_sdk_debug/debug';
     $form['#attached']['drupalSettings']['claudeAgentSdkDebug'] = [
       'streamUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.stream')->toString(),
+      'permissionDecisionUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.permission_decision')->toString(),
       'mode' => $mode,
     ];
 
@@ -215,6 +216,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         'none' => $this->t('None'),
         'allow' => $this->t('Allow'),
         'deny' => $this->t('Deny'),
+        'interactive' => $this->t('Interactive popup (Terminal stream only)'),
       ],
       '#default_value' => $form_state->getValue('can_use_tool') ?? 'none',
     ];
@@ -1772,6 +1774,12 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $interrupt = (bool) ($debugCallbacks['can_use_tool_interrupt'] ?? false);
       return function (string $toolName, array $input, $context) use ($message, $interrupt) {
         return new PermissionResultDeny($message, $interrupt);
+      };
+    }
+
+    if ($mode === 'interactive') {
+      return function (string $toolName, array $input, $context) {
+        return new PermissionResultDeny('Interactive approval is only supported in Terminal stream mode.', false);
       };
     }
 
