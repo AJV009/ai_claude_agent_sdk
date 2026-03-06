@@ -1,6 +1,6 @@
 ai_claude_agent_sdk_debug.page:
-  title: 'Claude Agent SDK Debug'
+  title: 'Debug'
   description: 'Run Claude Agent SDK debug exchanges and process monitoring.'
   route_name: ai_claude_agent_sdk_debug.page
-  parent: ai_claude_agent_sdk.settings
+  parent: ai_claude_agent_sdk.admin
   weight: 55

@@ -1,27 +1,34 @@
-ai_claude_agent_sdk.settings:
+ai_claude_agent_sdk.admin:
   title: 'Claude Agent SDK'
   description: 'Configure the Claude Agent SDK integration.'
   parent: ai.admin_settings
-  route_name: ai_claude_agent_sdk.settings
+  route_name: ai_claude_agent_sdk.admin
   weight: 50
+
+ai_claude_agent_sdk.settings:
+  title: 'Settings'
+  description: 'Configure Claude Agent SDK defaults.'
+  parent: ai_claude_agent_sdk.admin
+  route_name: ai_claude_agent_sdk.settings
+  weight: 0
 
 ai_claude_agent_sdk.profiles:
   title: 'Agent Profiles'
   description: 'Manage Claude agent profiles.'
-  parent: ai_claude_agent_sdk.settings
+  parent: ai_claude_agent_sdk.admin
   route_name: entity.agent_profile.collection
-  weight: 0
-
-ai_claude_agent_sdk.terminal:
-  title: 'Claude Terminal'
-  description: 'Interactive Claude Code terminal.'
-  parent: ai_claude_agent_sdk.settings
-  route_name: ai_claude_agent_sdk.terminal
-  weight: 10
+  weight: 5
 
 ai_claude_agent_sdk.sessions:
   title: 'Sessions'
   description: 'Browse Claude Code sessions.'
-  parent: ai_claude_agent_sdk.settings
+  parent: ai_claude_agent_sdk.admin
   route_name: ai_claude_agent_sdk.sessions
+  weight: 10
+
+ai_claude_agent_sdk.terminal:
+  title: 'Claude Terminal'
+  description: 'Interactive Claude Code terminal.'
+  parent: ai_claude_agent_sdk.admin
+  route_name: ai_claude_agent_sdk.terminal
   weight: 15

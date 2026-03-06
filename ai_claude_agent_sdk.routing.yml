@@ -1,7 +1,17 @@
-ai_claude_agent_sdk.settings:
+ai_claude_agent_sdk.admin:
   path: '/admin/config/ai/claude-agent-sdk'
   defaults:
     _title: 'Claude Agent SDK'
+    _controller: '\Drupal\system\Controller\SystemController::systemAdminMenuBlockPage'
+  requirements:
+    _permission: 'administer claude agent sdk'
+  options:
+    _admin_route: TRUE
+
+ai_claude_agent_sdk.settings:
+  path: '/admin/config/ai/claude-agent-sdk/settings'
+  defaults:
+    _title: 'Settings'
     _form: '\Drupal\ai_claude_agent_sdk\Form\ClaudeAgentSdkSettingsForm'
   requirements:
     _permission: 'administer claude agent sdk'
