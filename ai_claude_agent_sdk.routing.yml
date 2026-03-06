@@ -37,3 +37,11 @@ entity.agent_profile.delete_form:
     _entity_form: 'agent_profile.delete'
   requirements:
     _permission: 'administer claude agent sdk'
+
+ai_claude_agent_sdk.terminal:
+  path: '/admin/ai/claude-terminal'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeTerminalController::page'
+    _title: 'Claude Terminal'
+  requirements:
+    _permission: 'use claude terminal'

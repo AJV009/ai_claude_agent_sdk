@@ -1,0 +1,9 @@
+terminal:
+  css:
+    theme:
+      css/claude-terminal.css: {}
+  js:
+    js/claude-terminal.js: { attributes: { type: module } }
+  dependencies:
+    - core/drupalSettings
+    - core/once

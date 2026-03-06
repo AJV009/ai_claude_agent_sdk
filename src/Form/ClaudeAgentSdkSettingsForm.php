@@ -125,6 +125,13 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('sidecar_url') ?: 'http://localhost:3000',
     ];
 
+    $form['sidecar']['sidecar_ws_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Sidecar WebSocket URL (browser)'),
+      '#description' => $this->t('WebSocket URL for the browser to reach the sidecar. Leave empty to auto-detect (works for DDEV). Example: <code>wss://mysite.ddev.site:3100/ws</code>'),
+      '#default_value' => $config->get('sidecar_ws_url') ?: '',
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -163,6 +170,7 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ->set('api_key_key', (string) $form_state->getValue('api_key_key'))
       ->set('api_key_env_var', (string) $form_state->getValue('api_key_env_var'))
       ->set('sidecar_url', (string) $form_state->getValue('sidecar_url'))
+      ->set('sidecar_ws_url', (string) $form_state->getValue('sidecar_ws_url'))
       ->save();
 
     parent::submitForm($form, $form_state);

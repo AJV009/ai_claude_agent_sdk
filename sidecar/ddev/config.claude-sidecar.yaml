@@ -18,8 +18,8 @@ web_extra_exposed_ports:
 # Run sidecar as a background daemon inside the web container.
 web_extra_daemons:
   - name: claude-sidecar
-    command: "bash -c 'SIDECAR_DIR=$(find /var/www/html -path \"*/ai_claude_agent_sdk/sidecar/server.js\" -printf \"%h\" -quit 2>/dev/null) && [ -n \"$SIDECAR_DIR\" ] && cd \"$SIDECAR_DIR\" && exec node server.js'"
-    directory: /var/www/html
+    command: node /var/www/html/web/modules/contrib/ai_claude_agent_sdk/sidecar/server.js
+    directory: /var/www/html/web/modules/contrib/ai_claude_agent_sdk/sidecar
 
 # Install npm dependencies on container start.
 hooks:

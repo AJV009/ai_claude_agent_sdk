@@ -1,3 +1,8 @@
 administer claude agent sdk:
   title: 'Administer Claude Agent SDK'
   description: 'Configure the Claude Agent SDK integration settings.'
+
+use claude terminal:
+  title: 'Use Claude Terminal'
+  description: 'Access the Claude Code terminal. WARNING: This grants shell-level access through Claude Code.'
+  restrict access: true

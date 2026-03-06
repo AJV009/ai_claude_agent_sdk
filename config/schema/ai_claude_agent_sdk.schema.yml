@@ -26,6 +26,9 @@ ai_claude_agent_sdk.settings:
     sidecar_url:
       type: string
       label: 'Sidecar URL'
+    sidecar_ws_url:
+      type: string
+      label: 'Sidecar WebSocket URL'
 
 ai_claude_agent_sdk.agent_profile.*:
   type: config_entity
