@@ -49,7 +49,7 @@ entity.agent_profile.delete_form:
     _permission: 'administer claude agent sdk'
 
 ai_claude_agent_sdk.terminal:
-  path: '/admin/ai/claude-terminal'
+  path: '/admin/config/ai/claude-agent-sdk/terminal'
   defaults:
     _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeTerminalController::page'
     _title: 'Claude Terminal'
@@ -76,7 +76,7 @@ ai_claude_agent_sdk.assistant_permission_response:
     no_cache: TRUE
 
 ai_claude_agent_sdk.sessions:
-  path: '/admin/ai/claude-sessions'
+  path: '/admin/config/ai/claude-agent-sdk/sessions'
   defaults:
     _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeSessionsController::page'
     _title: 'Claude Sessions'

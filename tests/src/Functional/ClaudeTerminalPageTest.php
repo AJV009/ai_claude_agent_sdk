@@ -32,7 +32,7 @@ class ClaudeTerminalPageTest extends BrowserTestBase {
    * Tests that anonymous users cannot access the terminal page.
    */
   public function testAnonymousAccess(): void {
-    $this->drupalGet('/admin/ai/claude-terminal');
+    $this->drupalGet('/admin/config/ai/claude-agent-sdk/terminal');
     $this->assertSession()->statusCodeEquals(403);
   }
 
@@ -43,7 +43,7 @@ class ClaudeTerminalPageTest extends BrowserTestBase {
     $user = $this->drupalCreateUser(['use claude terminal']);
     $this->drupalLogin($user);
 
-    $this->drupalGet('/admin/ai/claude-terminal');
+    $this->drupalGet('/admin/config/ai/claude-agent-sdk/terminal');
     $this->assertSession()->statusCodeEquals(200);
   }
 
@@ -54,7 +54,7 @@ class ClaudeTerminalPageTest extends BrowserTestBase {
     $user = $this->drupalCreateUser(['use claude terminal']);
     $this->drupalLogin($user);
 
-    $this->drupalGet('/admin/ai/claude-terminal');
+    $this->drupalGet('/admin/config/ai/claude-agent-sdk/terminal');
 
     $this->assertSession()->elementExists('css', '#claude-terminal-wrapper');
     $this->assertSession()->elementExists('css', '#claude-terminal');
@@ -70,7 +70,7 @@ class ClaudeTerminalPageTest extends BrowserTestBase {
     $user = $this->drupalCreateUser(['use claude terminal']);
     $this->drupalLogin($user);
 
-    $this->drupalGet('/admin/ai/claude-terminal');
+    $this->drupalGet('/admin/config/ai/claude-agent-sdk/terminal');
 
     // The page should contain drupalSettings with claudeTerminal data.
     $this->assertSession()->responseContains('claudeTerminal');
