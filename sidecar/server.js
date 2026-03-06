@@ -15,11 +15,13 @@ const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const { PtyManager } = require('./lib/pty-manager');
 const { buildArgs } = require('./lib/cli-builder');
+const { getSessions, getSession, getActiveSessions } = require('./lib/sessions');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const CLAUDE_COMMAND = process.env.CLAUDE_COMMAND || 'claude';
 const MAX_PTYS = parseInt(process.env.MAX_PTYS, 10) || 5;
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
+const WORKING_DIR = process.env.WORKING_DIR || '/var/www/html';
 const VERSION = '0.1.0';
 
 const ptyManager = new PtyManager(MAX_PTYS);
@@ -48,9 +50,46 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.url && req.url.startsWith('/api/')) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const pathname = url.pathname;
+
+  if (pathname === '/api/sessions' && req.method === 'GET') {
+    const limit = parseInt(url.searchParams.get('limit'), 10) || 50;
+    const dir = url.searchParams.get('dir') || WORKING_DIR;
+    getSessions(dir, limit).then((result) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    });
+    return;
+  }
+
+  if (pathname === '/api/sessions/active' && req.method === 'GET') {
+    const active = getActiveSessions(ptyManager);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ active }));
+    return;
+  }
+
+  if (pathname.startsWith('/api/sessions/') && req.method === 'GET') {
+    const sessionId = pathname.slice('/api/sessions/'.length);
+    const limit = parseInt(url.searchParams.get('limit'), 10) || 20;
+    getSession(sessionId, WORKING_DIR, limit).then((result) => {
+      if (!result) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      const active = getActiveSessions(ptyManager);
+      const isActive = active.some(a => a.sessionId === sessionId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ...result, isActive }));
+    });
+    return;
+  }
+
+  if (pathname.startsWith('/api/')) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not implemented' }));
+    res.end(JSON.stringify({ error: 'Not found' }));
     return;
   }
 
