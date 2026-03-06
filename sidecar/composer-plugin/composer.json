@@ -1,0 +1,21 @@
+{
+  "name": "drupal/ai_claude_agent_sdk_sidecar_scaffold",
+  "description": "Composer plugin that scaffolds Claude TUI sidecar DDEV config on install.",
+  "type": "composer-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "composer-plugin-api": "^2",
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "Drupal\\ClaudeSidecarScaffold\\": "src/"
+    }
+  },
+  "extra": {
+    "class": "Drupal\\ClaudeSidecarScaffold\\Plugin"
+  },
+  "require-dev": {
+    "composer/composer": "^2.7"
+  }
+}
