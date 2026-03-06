@@ -1,23 +1,2 @@
-ai_claude_agent_sdk.settings_tab:
-  route_name: ai_claude_agent_sdk.settings
-  title: 'Settings'
-  base_route: ai_claude_agent_sdk.settings
-  weight: 0
-
-ai_claude_agent_sdk.profiles_tab:
-  route_name: entity.agent_profile.collection
-  title: 'Profiles'
-  base_route: ai_claude_agent_sdk.settings
-  weight: 5
-
-ai_claude_agent_sdk.sessions_tab:
-  route_name: ai_claude_agent_sdk.sessions
-  title: 'Sessions'
-  base_route: ai_claude_agent_sdk.settings
-  weight: 8
-
-ai_claude_agent_sdk.debug_tab:
-  route_name: ai_claude_agent_sdk_debug.page
-  title: 'Debug'
-  base_route: ai_claude_agent_sdk.settings
-  weight: 10
+# No local tasks. Navigation between Settings, Profiles, Sessions, and Debug
+# is handled by menu links (ai_claude_agent_sdk.links.menu.yml).
