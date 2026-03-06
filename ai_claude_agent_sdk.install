@@ -63,3 +63,13 @@ function ai_claude_agent_sdk_requirements($phase) {
 
   return $requirements;
 }
+
+/**
+ * Add permission_timeout setting.
+ */
+function ai_claude_agent_sdk_update_10001() {
+  $config = \Drupal::configFactory()->getEditable('ai_claude_agent_sdk.settings');
+  if ($config->get('permission_timeout') === NULL) {
+    $config->set('permission_timeout', 120)->save();
+  }
+}

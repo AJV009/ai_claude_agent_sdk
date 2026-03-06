@@ -132,6 +132,15 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('sidecar_ws_url') ?: '',
     ];
 
+    $form['sidecar']['permission_timeout'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Permission timeout (seconds)'),
+      '#description' => $this->t('Time to wait for a permission decision before auto-denying. Default: 120.'),
+      '#default_value' => $config->get('permission_timeout') ?? 120,
+      '#min' => 10,
+      '#max' => 600,
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -171,6 +180,7 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ->set('api_key_env_var', (string) $form_state->getValue('api_key_env_var'))
       ->set('sidecar_url', (string) $form_state->getValue('sidecar_url'))
       ->set('sidecar_ws_url', (string) $form_state->getValue('sidecar_ws_url'))
+      ->set('permission_timeout', (int) $form_state->getValue('permission_timeout'))
       ->save();
 
     parent::submitForm($form, $form_state);

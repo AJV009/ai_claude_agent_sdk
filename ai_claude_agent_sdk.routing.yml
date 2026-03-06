@@ -55,6 +55,16 @@ ai_claude_agent_sdk.assistant_stream:
   options:
     no_cache: TRUE
 
+ai_claude_agent_sdk.assistant_permission_response:
+  path: '/api/claude-assistant/permission-response'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeAssistantController::permissionResponse'
+  requirements:
+    _permission: 'use claude terminal'
+  methods: [POST]
+  options:
+    no_cache: TRUE
+
 ai_claude_agent_sdk.sessions:
   path: '/admin/ai/claude-sessions'
   defaults:

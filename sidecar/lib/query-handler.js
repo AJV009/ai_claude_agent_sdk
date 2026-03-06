@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { mapProfileToOptions } from './profile-mapper.js';
 
@@ -8,8 +9,9 @@ import { mapProfileToOptions } from './profile-mapper.js';
  * @param {object} res - HTTP response (SSE headers already set by caller).
  * @param {object} body - Parsed request body.
  * @param {object} counters - { queryCount, maxConcurrent } shared state.
+ * @param {object} permissionManager - Permission manager instance.
  */
-export async function handleQuery(req, res, body, counters) {
+export async function handleQuery(req, res, body, counters, permissionManager) {
   const { prompt, options: requestOptions = {} } = body;
 
   if (!prompt && !requestOptions.resume) {
@@ -24,8 +26,13 @@ export async function handleQuery(req, res, body, counters) {
 
   counters.queryCount++;
 
+  const queryId = crypto.randomUUID();
+
   const abortController = new AbortController();
-  req.on('close', () => abortController.abort());
+  req.on('close', () => {
+    abortController.abort();
+    permissionManager.cleanup(queryId);
+  });
 
   // Build SDK options from profile fields passed through options.
   const profileOptions = mapProfileToOptions(requestOptions);
@@ -55,7 +62,33 @@ export async function handleQuery(req, res, body, counters) {
     sdkOptions.env = { ...process.env, ...requestOptions.env };
   }
 
+  // Wire up interactive permission callback when requested.
+  if (requestOptions.interactivePermissions) {
+    const timeoutMs = requestOptions.permissionTimeoutMs || 120000;
+    sdkOptions.canUseTool = async (toolName, input, opts) => {
+      const { requestId, promise } = permissionManager.createRequest(
+        queryId, toolName, input, opts, timeoutMs,
+      );
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({
+          type: 'permission_request',
+          queryId,
+          requestId,
+          toolName,
+          input,
+          decisionReason: opts?.decisionReason,
+          suggestions: opts?.suggestions,
+          toolUseID: opts?.toolUseID,
+        })}\n\n`);
+      }
+      return promise;
+    };
+  }
+
   try {
+    // Emit query_start so the client knows the queryId for permission responses.
+    res.write(`data: ${JSON.stringify({ type: 'query_start', queryId })}\n\n`);
+
     const conversation = query({
       prompt: prompt || '',
       options: sdkOptions,
@@ -72,6 +105,7 @@ export async function handleQuery(req, res, body, counters) {
       res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
     }
   } finally {
+    permissionManager.cleanup(queryId);
     counters.queryCount--;
     if (!res.writableEnded) {
       res.write('data: [DONE]\n\n');

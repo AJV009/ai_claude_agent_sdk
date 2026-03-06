@@ -30,10 +30,16 @@ final class ClaudeBridgeService {
    *   Optional session ID to resume.
    * @param callable $onChunk
    *   Called with each raw SSE line (including "data: " prefix).
+   * @param array $mcpHeaders
+   *   Optional headers to inject into MCP server configs.
+   * @param bool $interactivePermissions
+   *   Whether to enable interactive permission prompts via SSE.
+   * @param int $permissionTimeoutMs
+   *   Timeout in milliseconds for permission requests.
    */
-  public function stream(array $profile, string $prompt, ?string $resume, callable $onChunk): void {
+  public function stream(array $profile, string $prompt, ?string $resume, callable $onChunk, array $mcpHeaders = [], bool $interactivePermissions = FALSE, int $permissionTimeoutMs = 120000): void {
     $url = $this->getSidecarUrl() . '/api/query';
-    $payload = json_encode($this->buildRequestPayload($profile, $prompt, $resume), JSON_THROW_ON_ERROR);
+    $payload = json_encode($this->buildRequestPayload($profile, $prompt, $resume, $mcpHeaders, $interactivePermissions, $permissionTimeoutMs), JSON_THROW_ON_ERROR);
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -72,11 +78,13 @@ final class ClaudeBridgeService {
    *   The user prompt.
    * @param string|null $resume
    *   Optional session ID to resume.
+   * @param array $mcpHeaders
+   *   Optional headers to inject into MCP server configs.
    *
    * @return string
    *   The accumulated response text.
    */
-  public function collectResponse(array $profile, string $prompt, ?string $resume = NULL): string {
+  public function collectResponse(array $profile, string $prompt, ?string $resume = NULL, array $mcpHeaders = []): string {
     $resultText = '';
     $buffer = '';
 
@@ -118,9 +126,56 @@ final class ClaudeBridgeService {
           throw new \RuntimeException('Sidecar error: ' . $decoded['message']);
         }
       }
-    });
+    }, $mcpHeaders);
 
     return trim($resultText);
+  }
+
+  /**
+   * Send a permission response to the sidecar.
+   *
+   * @param string $queryId
+   *   The query ID from the query_start SSE event.
+   * @param string $requestId
+   *   The request ID from the permission_request SSE event.
+   * @param string $behavior
+   *   Either 'allow' or 'deny'.
+   * @param string|null $message
+   *   Optional message for the permission decision.
+   *
+   * @return array
+   *   Array with keys: success, http_code, body.
+   */
+  public function sendPermissionResponse(string $queryId, string $requestId, string $behavior, ?string $message = NULL): array {
+    $url = $this->getSidecarUrl() . '/api/query/permission-response';
+    $payload = json_encode(array_filter([
+      'queryId' => $queryId,
+      'requestId' => $requestId,
+      'behavior' => $behavior,
+      'message' => $message,
+    ], fn($v) => $v !== NULL), JSON_THROW_ON_ERROR);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_POST => TRUE,
+      CURLOPT_POSTFIELDS => $payload,
+      CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_CONNECTTIMEOUT => 5,
+      CURLOPT_TIMEOUT => 10,
+    ]);
+
+    $result = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $body = is_string($result) ? (json_decode($result, TRUE) ?? []) : [];
+
+    return [
+      'success' => $httpCode === 200,
+      'http_code' => $httpCode,
+      'body' => $body,
+    ];
   }
 
   /**
@@ -136,7 +191,7 @@ final class ClaudeBridgeService {
    * @return array
    *   The request payload.
    */
-  private function buildRequestPayload(array $profile, string $prompt, ?string $resume): array {
+  private function buildRequestPayload(array $profile, string $prompt, ?string $resume, array $mcpHeaders = [], bool $interactivePermissions = FALSE, int $permissionTimeoutMs = 120000): array {
     $options = [];
 
     // Map profile fields to SDK option names.
@@ -171,8 +226,12 @@ final class ClaudeBridgeService {
             'type' => $server['transport'] ?? 'http',
             'url' => $server['url'],
           ];
-          if (isset($server['headers'])) {
-            $config['headers'] = $server['headers'];
+          $existingHeaders = $server['headers'] ?? [];
+          if (!empty($mcpHeaders)) {
+            $existingHeaders = array_merge($existingHeaders, $mcpHeaders);
+          }
+          if (!empty($existingHeaders)) {
+            $config['headers'] = $existingHeaders;
           }
           $mcpServers[$server['name']] = $config;
         }
@@ -190,6 +249,12 @@ final class ClaudeBridgeService {
     $authEnv = $this->authEnvResolver->buildEnv();
     if (!empty($authEnv)) {
       $options['env'] = $authEnv;
+    }
+
+    // Interactive permission propagation.
+    if ($interactivePermissions) {
+      $options['interactivePermissions'] = TRUE;
+      $options['permissionTimeoutMs'] = $permissionTimeoutMs;
     }
 
     return array_filter([

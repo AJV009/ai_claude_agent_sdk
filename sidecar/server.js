@@ -16,6 +16,7 @@ import { buildArgs } from './lib/cli-builder.js';
 import { getSessions, getSession, getActiveSessions } from './lib/sessions.js';
 import { discoverCommands } from './lib/commands.js';
 import { handleQuery } from './lib/query-handler.js';
+import { createPermissionManager } from './lib/permission-manager.js';
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const CLAUDE_COMMAND = process.env.CLAUDE_COMMAND || 'claude';
@@ -28,6 +29,8 @@ const ptyManager = new PtyManager(MAX_PTYS);
 
 // Shared counter for SDK query() calls (bounded together with PTYs by MAX_PTYS).
 const queryCounters = { queryCount: 0, maxConcurrent: MAX_PTYS };
+
+const permissionManager = createPermissionManager();
 
 // --- HTTP server ---
 
@@ -117,7 +120,45 @@ const server = http.createServer((req, res) => {
         'X-Accel-Buffering': 'no',
       });
 
-      handleQuery(req, res, parsed, queryCounters);
+      handleQuery(req, res, parsed, queryCounters, permissionManager);
+    });
+    return;
+  }
+
+  if (pathname === '/api/query/permission-response' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch (_) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+        return;
+      }
+
+      const { queryId, requestId, behavior, message } = parsed;
+      if (!queryId || !requestId || !behavior) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'queryId, requestId, and behavior are required' }));
+        return;
+      }
+
+      if (behavior !== 'allow' && behavior !== 'deny') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: "behavior must be 'allow' or 'deny'" }));
+        return;
+      }
+
+      const resolved = permissionManager.resolveRequest(queryId, requestId, { behavior, message });
+      if (resolved) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Permission request not found or already resolved' }));
+      }
     });
     return;
   }

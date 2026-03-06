@@ -7,3 +7,4 @@ api_key_key: ''
 api_key_env_var: 'ANTHROPIC_API_KEY'
 sidecar_url: 'http://localhost:3000'
 sidecar_ws_url: ''
+permission_timeout: 120

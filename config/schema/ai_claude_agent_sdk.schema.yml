@@ -29,6 +29,9 @@ ai_claude_agent_sdk.settings:
     sidecar_ws_url:
       type: string
       label: 'Sidecar WebSocket URL'
+    permission_timeout:
+      type: integer
+      label: 'Permission timeout (seconds)'
 
 ai_claude_agent_sdk.agent_profile.*:
   type: config_entity

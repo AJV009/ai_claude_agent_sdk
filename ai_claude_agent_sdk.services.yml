@@ -8,3 +8,6 @@ services:
   ai_claude_agent_sdk.bridge:
     class: Drupal\ai_claude_agent_sdk\Service\ClaudeBridgeService
     arguments: ['@config.factory', '@ai_claude_agent_sdk.process_limiter', '@ai_claude_agent_sdk.auth_env_resolver']
+  ai_claude_agent_sdk.execution_envelope:
+    class: Drupal\ai_claude_agent_sdk\Service\ExecutionEnvelopeService
+    arguments: ['@tempstore.shared', '@current_user', '@uuid']
