@@ -1,0 +1,37 @@
+#ddev-generated
+# Placed by drupal-scaffold from drupal/ai_claude_agent_sdk.
+# Remove this file and add an entry to .ddev/.gitignore to prevent re-scaffolding.
+#
+# After scaffolding, run: ddev restart
+# Sidecar available at: https://<project>.ddev.site:3100/health
+
+# Build tools needed for node-pty native compilation.
+webimage_extra_packages: [python3, make, g++]
+
+# Expose sidecar port through ddev-router.
+web_extra_exposed_ports:
+  - name: claude-sidecar
+    container_port: 3000
+    http_port: 3099
+    https_port: 3100
+
+# Run sidecar as a background daemon inside the web container.
+web_extra_daemons:
+  - name: claude-sidecar
+    command: "bash -c 'SIDECAR_DIR=$(find /var/www/html -path \"*/ai_claude_agent_sdk/sidecar/server.js\" -printf \"%h\" -quit 2>/dev/null) && [ -n \"$SIDECAR_DIR\" ] && cd \"$SIDECAR_DIR\" && exec node server.js'"
+    directory: /var/www/html
+
+# Install npm dependencies on container start.
+hooks:
+  post-start:
+    - exec: |
+        SIDECAR_DIR=$(find /var/www/html -path "*/ai_claude_agent_sdk/sidecar/package.json" -printf "%h" -quit 2>/dev/null)
+        if [ -n "$SIDECAR_DIR" ]; then
+          echo "Installing Claude sidecar dependencies..."
+          cd "$SIDECAR_DIR" && npm install --prefer-offline 2>&1 | tail -1
+        else
+          echo "Warning: Claude sidecar not found. Is ai_claude_agent_sdk installed?"
+        fi
+
+web_environment:
+  - WORKING_DIR=/var/www/html

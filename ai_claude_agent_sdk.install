@@ -1,0 +1,59 @@
+<?php
+
+/**
+ * @file
+ * Install and requirements for AI Claude Agent SDK.
+ */
+
+/**
+ * Implements hook_requirements().
+ */
+function ai_claude_agent_sdk_requirements($phase) {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    $sidecar_url = getenv('CLAUDE_SIDECAR_URL') ?: 'http://localhost:3000';
+    $health_url = rtrim($sidecar_url, '/') . '/health';
+
+    try {
+      $client = \Drupal::httpClient();
+      $response = $client->get($health_url, [
+        'timeout' => 3,
+        'connect_timeout' => 2,
+      ]);
+
+      if ($response->getStatusCode() === 200) {
+        $data = json_decode($response->getBody()->getContents(), TRUE);
+        $requirements['ai_claude_agent_sdk_sidecar'] = [
+          'title' => t('Claude TUI Sidecar'),
+          'value' => t('Running (v@version, @ptys active PTYs)', [
+            '@version' => $data['version'] ?? 'unknown',
+            '@ptys' => $data['activePTYs'] ?? '?',
+          ]),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+      else {
+        $requirements['ai_claude_agent_sdk_sidecar'] = [
+          'title' => t('Claude TUI Sidecar'),
+          'value' => t('Unexpected response (HTTP @code)', [
+            '@code' => $response->getStatusCode(),
+          ]),
+          'severity' => REQUIREMENT_WARNING,
+        ];
+      }
+    }
+    catch (\Exception $e) {
+      $requirements['ai_claude_agent_sdk_sidecar'] = [
+        'title' => t('Claude TUI Sidecar'),
+        'value' => t('Not running'),
+        'description' => t('The Claude TUI sidecar is not reachable at <code>@url</code>. For DDEV, run: <code>cd web/modules/contrib/ai_claude_agent_sdk/sidecar && bash setup.sh ddev && ddev restart</code>. Set the <code>CLAUDE_SIDECAR_URL</code> environment variable if using a custom URL.', [
+          '@url' => $health_url,
+        ]),
+        'severity' => REQUIREMENT_WARNING,
+      ];
+    }
+  }
+
+  return $requirements;
+}

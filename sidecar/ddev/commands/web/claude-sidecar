@@ -1,0 +1,37 @@
+#!/bin/bash
+
+## Description: Manage the Claude TUI sidecar
+## Usage: claude-sidecar [status|health|logs|restart]
+## Example: ddev claude-sidecar status
+## Example: ddev claude-sidecar health
+## Example: ddev claude-sidecar restart
+
+set -e
+
+case "${1:-status}" in
+  status)
+    if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+      echo "Claude sidecar is running"
+      curl -s http://localhost:3000/health | python3 -m json.tool 2>/dev/null || curl -s http://localhost:3000/health
+    else
+      echo "Claude sidecar is not running"
+      exit 1
+    fi
+    ;;
+  health)
+    curl -sf http://localhost:3000/health | python3 -m json.tool 2>/dev/null || {
+      echo "Claude sidecar is not responding"
+      exit 1
+    }
+    ;;
+  restart)
+    echo "Restarting claude-sidecar daemon..."
+    supervisorctl restart claude-sidecar
+    sleep 1
+    curl -sf http://localhost:3000/health > /dev/null 2>&1 && echo "Sidecar restarted successfully" || echo "Warning: sidecar may still be starting"
+    ;;
+  *)
+    echo "Usage: ddev claude-sidecar [status|health|restart]"
+    exit 1
+    ;;
+esac
