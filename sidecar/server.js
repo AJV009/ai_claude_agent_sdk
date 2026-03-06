@@ -206,8 +206,12 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    const { args, cleanupFiles: files } = buildArgs(profile, { resume, prompt });
+    // Don't pass prompt to buildArgs (which would add -p for non-interactive mode).
+    // Instead, queue it and send via PTY stdin after REPL prompt detection.
+    const { args, cleanupFiles: files } = buildArgs(profile, { resume });
     cleanupFiles = files;
+
+    let pendingPrompt = prompt || null;
 
     const cwd = profile.working_directory || process.env.WORKING_DIR || '/var/www/html';
     const entry = ptyManager.spawn(connId, CLAUDE_COMMAND, args, {
@@ -236,6 +240,14 @@ wss.on('connection', (ws) => {
     entry.pty.onData((data) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data);
+      }
+      // Detect REPL prompt and send queued initial prompt.
+      if (pendingPrompt && (data.includes('\u276f') || data.includes('> '))) {
+        const text = pendingPrompt;
+        pendingPrompt = null;
+        setTimeout(() => {
+          ptyManager.write(ptyId, text + '\r');
+        }, 100);
       }
     });
   }

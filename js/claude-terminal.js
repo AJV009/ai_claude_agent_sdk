@@ -11,11 +11,16 @@
   const FIT_VERSION = '0.10.0';
   const WEBGL_VERSION = '0.18.0';
 
+  let initialized = false;
+
   Drupal.behaviors.claudeTerminal = {
     attach: function (context) {
-      once('claude-terminal', '#claude-terminal', context).forEach(function (el) {
+      if (initialized) return;
+      const el = document.getElementById('claude-terminal');
+      if (el && context.contains(el)) {
+        initialized = true;
         initTerminal(el);
-      });
+      }
     }
   };
 
@@ -348,7 +353,6 @@
     let reconnectDelay = 1000;
     let intentionalClose = false;
     let connected = false;
-    let pendingPrompt = null;
     const MAX_RECONNECT_DELAY = 16000;
 
     function updateStatus(state, text) {
@@ -426,15 +430,13 @@
         if (sessionId) {
           spawnMsg.resume = sessionId;
         }
+        if (promptText) {
+          spawnMsg.prompt = promptText;
+        }
         ws.send(JSON.stringify(spawnMsg));
 
         // Send initial size.
         ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-
-        // Queue prompt text — it will be sent once the REPL prompt is detected.
-        if (promptText) {
-          pendingPrompt = promptText;
-        }
 
         // Clear input and update state.
         if (promptInput) {
@@ -467,16 +469,6 @@
         catch (e) {
           // Raw PTY data (non-JSON).
           term.write(data);
-          // Detect REPL prompt and send queued initial prompt.
-          if (pendingPrompt && (data.includes('\u276f') || data.includes('\u003e '))) {
-            const text = pendingPrompt;
-            pendingPrompt = null;
-            setTimeout(function () {
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(text + '\r');
-              }
-            }, 100);
-          }
         }
       };
 
