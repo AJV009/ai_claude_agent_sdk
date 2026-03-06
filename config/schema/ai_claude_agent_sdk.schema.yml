@@ -23,3 +23,84 @@ ai_claude_agent_sdk.settings:
     api_key_env_var:
       type: string
       label: 'Environment variable name for API key'
+
+ai_claude_agent_sdk.agent_profile.*:
+  type: config_entity
+  label: 'Claude Agent Profile'
+  mapping:
+    id:
+      type: string
+      label: 'Machine name'
+    label:
+      type: label
+      label: 'Label'
+    uuid:
+      type: string
+      label: 'UUID'
+    description:
+      type: string
+      label: 'Description'
+    system_prompt:
+      type: text
+      label: 'System prompt'
+    model:
+      type: string
+      label: 'Model'
+    permission_mode:
+      type: string
+      label: 'Permission mode'
+    max_turns:
+      type: integer
+      label: 'Max turns'
+    allowed_tools:
+      type: sequence
+      label: 'Allowed tools'
+      sequence:
+        type: string
+        label: 'Tool name'
+    denied_tools:
+      type: sequence
+      label: 'Denied tools'
+      sequence:
+        type: string
+        label: 'Tool name'
+    mcp_servers:
+      type: sequence
+      label: 'MCP servers'
+      sequence:
+        type: mapping
+        label: 'MCP server'
+        mapping:
+          name:
+            type: string
+            label: 'Name'
+          transport:
+            type: string
+            label: 'Transport'
+          url:
+            type: string
+            label: 'URL'
+    working_directory:
+      type: string
+      label: 'Working directory'
+    sandbox:
+      type: boolean
+      label: 'Sandbox'
+    allowed_directories:
+      type: sequence
+      label: 'Allowed directories'
+      sequence:
+        type: string
+        label: 'Directory path'
+    executor_uid:
+      type: integer
+      label: 'Executor UID'
+    execution_modality:
+      type: string
+      label: 'Execution modality'
+    extra_args:
+      type: sequence
+      label: 'Extra CLI arguments'
+      sequence:
+        type: string
+        label: 'Argument'

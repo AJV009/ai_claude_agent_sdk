@@ -1,0 +1,5 @@
+agent_profile.add:
+  route_name: entity.agent_profile.add_form
+  title: 'Add agent profile'
+  appears_on:
+    - entity.agent_profile.collection

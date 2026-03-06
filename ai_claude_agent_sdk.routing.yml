@@ -5,3 +5,35 @@ ai_claude_agent_sdk.settings:
     _form: '\Drupal\ai_claude_agent_sdk\Form\ClaudeAgentSdkSettingsForm'
   requirements:
     _permission: 'administer claude agent sdk'
+
+entity.agent_profile.collection:
+  path: '/admin/config/ai/claude-agent-sdk/profiles'
+  defaults:
+    _title: 'Agent Profiles'
+    _entity_list: 'agent_profile'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.agent_profile.add_form:
+  path: '/admin/config/ai/claude-agent-sdk/profiles/add'
+  defaults:
+    _title: 'Add agent profile'
+    _entity_form: 'agent_profile.add'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.agent_profile.edit_form:
+  path: '/admin/config/ai/claude-agent-sdk/profiles/{agent_profile}/edit'
+  defaults:
+    _title: 'Edit agent profile'
+    _entity_form: 'agent_profile.edit'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.agent_profile.delete_form:
+  path: '/admin/config/ai/claude-agent-sdk/profiles/{agent_profile}/delete'
+  defaults:
+    _title: 'Delete agent profile'
+    _entity_form: 'agent_profile.delete'
+  requirements:
+    _permission: 'administer claude agent sdk'

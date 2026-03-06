@@ -4,6 +4,12 @@ ai_claude_agent_sdk.settings_tab:
   base_route: ai_claude_agent_sdk.settings
   weight: 0
 
+ai_claude_agent_sdk.profiles_tab:
+  route_name: entity.agent_profile.collection
+  title: 'Profiles'
+  base_route: ai_claude_agent_sdk.settings
+  weight: 5
+
 ai_claude_agent_sdk.debug_tab:
   route_name: ai_claude_agent_sdk_debug.page
   title: 'Debug'

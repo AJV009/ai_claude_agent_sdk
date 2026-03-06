@@ -1,0 +1,20 @@
+id: default
+label: 'Default Agent'
+description: 'Default agent profile with sensible defaults.'
+system_prompt: ''
+model: sonnet
+permission_mode: plan
+max_turns: 25
+allowed_tools: []
+denied_tools:
+  - Bash
+mcp_servers:
+  - name: drupal
+    transport: http
+    url: '/_mcp'
+working_directory: ''
+sandbox: false
+allowed_directories: []
+executor_uid: 0
+execution_modality: interactive
+extra_args: []
