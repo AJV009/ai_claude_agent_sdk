@@ -35,3 +35,4 @@ hooks:
 
 web_environment:
   - WORKING_DIR=/var/www/html
+  - CLAUDE_SIDECAR_URL=http://localhost:3000

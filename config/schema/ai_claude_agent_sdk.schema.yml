@@ -23,6 +23,9 @@ ai_claude_agent_sdk.settings:
     api_key_env_var:
       type: string
       label: 'Environment variable name for API key'
+    sidecar_url:
+      type: string
+      label: 'Sidecar URL'
 
 ai_claude_agent_sdk.agent_profile.*:
   type: config_entity

@@ -5,3 +5,4 @@ max_concurrent_cli: 8
 api_key_source: 'environment'
 api_key_key: ''
 api_key_env_var: 'ANTHROPIC_API_KEY'
+sidecar_url: 'http://localhost:3000'

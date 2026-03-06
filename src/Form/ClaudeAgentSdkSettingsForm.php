@@ -112,6 +112,19 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['sidecar'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Sidecar'),
+      '#open' => TRUE,
+    ];
+
+    $form['sidecar']['sidecar_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Sidecar URL'),
+      '#description' => $this->t('Base URL of the Node.js PTY sidecar. DDEV default: <code>http://localhost:3000</code>. The WebSocket endpoint is at <code>/ws</code> relative to this.'),
+      '#default_value' => $config->get('sidecar_url') ?: 'http://localhost:3000',
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -149,6 +162,7 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ->set('api_key_source', (string) $form_state->getValue('api_key_source'))
       ->set('api_key_key', (string) $form_state->getValue('api_key_key'))
       ->set('api_key_env_var', (string) $form_state->getValue('api_key_env_var'))
+      ->set('sidecar_url', (string) $form_state->getValue('sidecar_url'))
       ->save();
 
     parent::submitForm($form, $form_state);
