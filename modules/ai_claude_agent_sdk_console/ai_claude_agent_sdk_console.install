@@ -1,0 +1,15 @@
+<?php
+
+/**
+ * @file
+ * Install/uninstall hooks for AI Claude Agent SDK Console.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function ai_claude_agent_sdk_console_uninstall() {
+  \Drupal::configFactory()
+    ->getEditable('ai_agents.ai_agent.claude_agent_sdk_console')
+    ->delete();
+}
