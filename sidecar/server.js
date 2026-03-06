@@ -16,6 +16,7 @@ const { WebSocketServer } = require('ws');
 const { PtyManager } = require('./lib/pty-manager');
 const { buildArgs } = require('./lib/cli-builder');
 const { getSessions, getSession, getActiveSessions } = require('./lib/sessions');
+const { discoverCommands } = require('./lib/commands');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const CLAUDE_COMMAND = process.env.CLAUDE_COMMAND || 'claude';
@@ -52,6 +53,13 @@ const server = http.createServer((req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
+
+  if (pathname === '/api/commands' && req.method === 'GET') {
+    const commands = discoverCommands(WORKING_DIR);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ commands }));
+    return;
+  }
 
   if (pathname === '/api/sessions' && req.method === 'GET') {
     const limit = parseInt(url.searchParams.get('limit'), 10) || 50;

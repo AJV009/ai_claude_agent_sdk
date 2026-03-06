@@ -166,3 +166,49 @@
   color: #888;
   cursor: default;
 }
+
+/* Command row */
+#claude-command-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: #12122a;
+  overflow-x: auto;
+  flex-shrink: 0;
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.claude-cmd-btn {
+  padding: 3px 10px;
+  background: #2a2a4e;
+  color: #a0a0c0;
+  border: 1px solid #383868;
+  border-radius: 12px;
+  font-size: 12px;
+  font-family: monospace;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.claude-cmd-btn:hover {
+  background: #3a3a6e;
+  color: #e0e0ff;
+  border-color: #5555aa;
+}
+
+.claude-cmd-more {
+  padding: 3px 8px;
+  background: #2a2a4e;
+  color: #a0a0c0;
+  border: 1px solid #383868;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: monospace;
+  cursor: pointer;
+}
+
+/* Category accents */
+.claude-cmd-btn[data-category="project"] { border-color: #4a7a4a; }
+.claude-cmd-btn[data-category="user"] { border-color: #7a7a4a; }

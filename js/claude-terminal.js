@@ -140,6 +140,102 @@
     return { profileSelect, sessionSelect, promptInput, triggerBtn };
   }
 
+  async function loadCommands(apiBase) {
+    if (!apiBase) return [];
+    try {
+      const resp = await fetch(apiBase + '/api/commands');
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return data.commands || [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function buildCommandRow(commands, promptInput, wsGetter, connectedGetter) {
+    var PRIMARY = ['commit', 'review', 'compact', 'plan', 'init'];
+    var row = document.createElement('div');
+    row.id = 'claude-command-row';
+
+    var primaryCmds = [];
+    var otherCmds = [];
+    commands.forEach(function (cmd) {
+      if (PRIMARY.indexOf(cmd.name) !== -1 && cmd.category === 'builtin') {
+        primaryCmds.push(cmd);
+      } else {
+        otherCmds.push(cmd);
+      }
+    });
+
+    // Sort primary commands by PRIMARY order.
+    primaryCmds.sort(function (a, b) {
+      return PRIMARY.indexOf(a.name) - PRIMARY.indexOf(b.name);
+    });
+
+    function handleCommand(cmd) {
+      if (cmd.hasArgs) {
+        promptInput.value = '/' + cmd.name + ' ';
+        promptInput.focus();
+        return;
+      }
+      var currentWs = wsGetter();
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.send('/' + cmd.name + '\n');
+      } else {
+        promptInput.value = '/' + cmd.name;
+      }
+    }
+
+    primaryCmds.forEach(function (cmd) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'claude-cmd-btn';
+      btn.setAttribute('data-category', cmd.category);
+      btn.textContent = '/' + cmd.name;
+      btn.title = cmd.description;
+      btn.addEventListener('click', function () {
+        handleCommand(cmd);
+      });
+      row.appendChild(btn);
+    });
+
+    if (otherCmds.length > 0) {
+      var select = document.createElement('select');
+      select.className = 'claude-cmd-more';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'More...';
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      select.appendChild(placeholder);
+
+      otherCmds.forEach(function (cmd) {
+        var opt = document.createElement('option');
+        opt.value = cmd.name;
+        opt.textContent = '/' + cmd.name;
+        opt.title = cmd.description;
+        opt.setAttribute('data-category', cmd.category);
+        opt.setAttribute('data-has-args', cmd.hasArgs ? '1' : '0');
+        select.appendChild(opt);
+      });
+
+      select.addEventListener('change', function () {
+        var name = select.value;
+        var cmd = otherCmds.find(function (c) { return c.name === name; });
+        if (cmd) {
+          handleCommand(cmd);
+        }
+        select.selectedIndex = 0;
+      });
+      row.appendChild(select);
+    }
+
+    var toolbar = document.getElementById('claude-terminal-toolbar');
+    if (toolbar) {
+      toolbar.after(row);
+    }
+  }
+
   async function loadSessions(apiBase, sessionSelect, hashParams) {
     if (!apiBase || !sessionSelect) return;
     try {
@@ -183,6 +279,12 @@
       sessionSelect.addEventListener('focus', function () {
         loadSessions(settings.apiBase, sessionSelect);
       });
+    }
+
+    // Load and render slash command buttons.
+    const commands = await loadCommands(settings.apiBase);
+    if (commands.length > 0 && promptInput) {
+      buildCommandRow(commands, promptInput, function () { return ws; }, function () { return connected; });
     }
 
     const { Terminal, FitAddon, WebglAddon } = await loadXtermModules();
