@@ -12,6 +12,7 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  gap: 8px;
   background: #16213e;
   min-height: 48px;
   padding: 0 12px;
@@ -64,4 +65,104 @@
 
 .claude-status-dot.error {
   background-color: #e74c3c;
+}
+
+/* Toolbar group wrappers */
+.claude-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.claude-toolbar-group label {
+  color: #a0a0c0;
+  font-size: 11px;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+/* Dropdowns */
+#claude-profile-select,
+#claude-session-select {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+#claude-session-select {
+  max-width: 250px;
+}
+
+#claude-profile-select:focus,
+#claude-session-select:focus {
+  border-color: #3498db;
+  outline: none;
+}
+
+/* Prompt input */
+#claude-prompt-input {
+  flex: 1;
+  min-width: 120px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+#claude-prompt-input:focus {
+  border-color: #3498db;
+  outline: none;
+}
+
+#claude-prompt-input::placeholder {
+  color: #666;
+}
+
+/* Trigger button - 4 states */
+#claude-trigger-btn {
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.claude-btn-start {
+  background: #2ecc71;
+  color: #fff;
+}
+
+.claude-btn-start:hover {
+  background: #27ae60;
+}
+
+.claude-btn-connecting {
+  background: #f39c12;
+  color: #fff;
+  cursor: wait;
+}
+
+.claude-btn-send {
+  background: #3498db;
+  color: #fff;
+}
+
+.claude-btn-send:hover {
+  background: #2980b9;
+}
+
+.claude-btn-idle {
+  background: #444;
+  color: #888;
+  cursor: default;
 }
