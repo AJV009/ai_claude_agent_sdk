@@ -18,3 +18,10 @@ ai_claude_agent_sdk.terminal:
   parent: ai_claude_agent_sdk.settings
   route_name: ai_claude_agent_sdk.terminal
   weight: 10
+
+ai_claude_agent_sdk.sessions:
+  title: 'Sessions'
+  description: 'Browse Claude Code sessions.'
+  parent: ai_claude_agent_sdk.settings
+  route_name: ai_claude_agent_sdk.sessions
+  weight: 15

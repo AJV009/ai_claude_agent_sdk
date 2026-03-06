@@ -10,6 +10,12 @@ ai_claude_agent_sdk.profiles_tab:
   base_route: ai_claude_agent_sdk.settings
   weight: 5
 
+ai_claude_agent_sdk.sessions_tab:
+  route_name: ai_claude_agent_sdk.sessions
+  title: 'Sessions'
+  base_route: ai_claude_agent_sdk.settings
+  weight: 8
+
 ai_claude_agent_sdk.debug_tab:
   route_name: ai_claude_agent_sdk_debug.page
   title: 'Debug'
