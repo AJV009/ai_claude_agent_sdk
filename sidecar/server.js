@@ -100,6 +100,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (pathname === '/api/query' && req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+
   if (pathname === '/api/query' && req.method === 'POST') {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
@@ -122,6 +128,12 @@ const server = http.createServer((req, res) => {
 
       handleQuery(req, res, parsed, queryCounters, permissionManager);
     });
+    return;
+  }
+
+  if (pathname === '/api/query/permission-response' && req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
     return;
   }
 

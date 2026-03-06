@@ -29,7 +29,7 @@ export async function handleQuery(req, res, body, counters, permissionManager) {
   const queryId = crypto.randomUUID();
 
   const abortController = new AbortController();
-  req.on('close', () => {
+  res.on('close', () => {
     abortController.abort();
     permissionManager.cleanup(queryId);
   });
