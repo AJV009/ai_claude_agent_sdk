@@ -56,6 +56,23 @@ export async function handleQuery(req, res, body, counters, permissionManager) {
   if (requestOptions.mcpServers) sdkOptions.mcpServers = requestOptions.mcpServers;
   if (requestOptions.additionalDirectories) sdkOptions.additionalDirectories = requestOptions.additionalDirectories;
   if (requestOptions.sandbox) sdkOptions.sandbox = requestOptions.sandbox;
+  if (requestOptions.continueConversation) sdkOptions.continueConversation = requestOptions.continueConversation;
+  if (requestOptions.tools) sdkOptions.tools = requestOptions.tools;
+  if (requestOptions.settings) sdkOptions.settings = requestOptions.settings;
+  if (requestOptions.maxThinkingTokens) sdkOptions.maxThinkingTokens = requestOptions.maxThinkingTokens;
+  if (requestOptions.user) sdkOptions.user = requestOptions.user;
+  if (requestOptions.maxBudgetUsd) sdkOptions.maxBudgetUsd = requestOptions.maxBudgetUsd;
+  if (requestOptions.includePartialMessages) sdkOptions.includePartialMessages = requestOptions.includePartialMessages;
+  if (requestOptions.forkSession) sdkOptions.forkSession = requestOptions.forkSession;
+  if (requestOptions.enableFileCheckpointing) sdkOptions.enableFileCheckpointing = requestOptions.enableFileCheckpointing;
+  if (requestOptions.betas) sdkOptions.betas = requestOptions.betas;
+  if (requestOptions.fallbackModel) sdkOptions.fallbackModel = requestOptions.fallbackModel;
+  if (requestOptions.permissionPromptToolName) sdkOptions.permissionPromptToolName = requestOptions.permissionPromptToolName;
+  if (requestOptions.agents) sdkOptions.agents = requestOptions.agents;
+  if (requestOptions.settingSources) sdkOptions.settingSources = requestOptions.settingSources;
+  if (requestOptions.plugins) sdkOptions.plugins = requestOptions.plugins;
+  if (requestOptions.outputFormat) sdkOptions.outputFormat = requestOptions.outputFormat;
+  if (requestOptions.maxBufferSize) sdkOptions.maxBufferSize = requestOptions.maxBufferSize;
 
   // Inject env (ANTHROPIC_API_KEY etc.) from request.
   if (requestOptions.env) {

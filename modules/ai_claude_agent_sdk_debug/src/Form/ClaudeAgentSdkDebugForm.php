@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\ai_claude_agent_sdk_debug\Form;
 
-use Claude\AgentSdk\ClaudeAgentOptions;
-use Claude\AgentSdk\Client;
-use Claude\AgentSdk\Query;
-use Claude\AgentSdk\Types\PermissionResultAllow;
-use Claude\AgentSdk\Types\PermissionResultDeny;
+use Drupal\ai_claude_agent_sdk\Service\ClaudeBridgeService;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\ai_claude_agent_sdk_debug\Support\PermissionPresetHelper;
@@ -31,13 +27,16 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
   protected SessionFileStore $sessionFileStore;
 
+  protected ClaudeBridgeService $bridge;
+
   private ?string $lastSessionId = null;
 
-  public function __construct(SessionTracker $sessionTracker, ClaudeAgentSdkProcessLimiter $processLimiter, ClaudeAgentSdkAuthEnvResolver $authEnvResolver, SessionFileStore $sessionFileStore) {
+  public function __construct(SessionTracker $sessionTracker, ClaudeAgentSdkProcessLimiter $processLimiter, ClaudeAgentSdkAuthEnvResolver $authEnvResolver, SessionFileStore $sessionFileStore, ClaudeBridgeService $bridge) {
     $this->sessionTracker = $sessionTracker;
     $this->processLimiter = $processLimiter;
     $this->authEnvResolver = $authEnvResolver;
     $this->sessionFileStore = $sessionFileStore;
+    $this->bridge = $bridge;
   }
 
   public static function create(ContainerInterface $container): self {
@@ -46,6 +45,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $container->get('ai_claude_agent_sdk.process_limiter'),
       $container->get('ai_claude_agent_sdk.auth_env_resolver'),
       $container->get('ai_claude_agent_sdk_debug.session_file_store'),
+      $container->get('ai_claude_agent_sdk.bridge'),
     );
   }
 
@@ -60,7 +60,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $form['#attached']['library'][] = 'ai_claude_agent_sdk_debug/debug';
     $form['#attached']['drupalSettings']['claudeAgentSdkDebug'] = [
       'streamUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.stream')->toString(),
-      'permissionDecisionUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.permission_decision')->toString(),
+      'permissionResponseUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.permission_response')->toString(),
       'mode' => $mode,
     ];
 
@@ -73,10 +73,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     ];
 
     if ($mode === 'query') {
-      $form['input_type'] = [
-        '#type' => 'hidden',
-        '#value' => 'string',
-      ];
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
@@ -86,23 +82,15 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       ];
     }
     elseif ($mode === 'session_query') {
-      $form['input_type'] = [
-        '#type' => 'hidden',
-        '#value' => 'string',
-      ];
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
-        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support and no streaming client. For bridge tool-calling tests, use <a href=":terminal_url">Terminal (Client)</a>.', [
+        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support. For bridge tool-calling tests, use <a href=":terminal_url">Terminal (Client)</a>.', [
           ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
         ]),
       ];
     }
     elseif ($mode === 'terminal') {
-      $form['input_type'] = [
-        '#type' => 'hidden',
-        '#value' => 'string',
-      ];
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
@@ -115,23 +103,13 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
         '#title' => $this->t('Mode'),
         '#markup' => $this->t('Multiple exchanges (Client). This page reuses the same session when streaming.'),
       ];
-      $form['input_type'] = [
-        '#type' => 'select',
-        '#title' => $this->t('Input Type'),
-        '#options' => [
-          'string' => $this->t('String prompt'),
-          'jsonl' => $this->t('JSONL messages (streaming)'),
-          'deepchat' => $this->t('DeepChat request JSON'),
-        ],
-        '#default_value' => $form_state->getValue('input_type') ?? 'string',
-      ];
     }
 
     $form['prompt'] = [
       '#type' => 'textarea',
-      '#title' => $this->t('Prompt / Messages'),
+      '#title' => $this->t('Prompt'),
       '#rows' => 10,
-      '#description' => $this->t('For JSONL mode, provide one JSON object per line in CLI stream format. For DeepChat, provide full request JSON.'),
+      '#description' => $this->t('Enter your prompt text.'),
       '#default_value' => $form_state->getValue('prompt') ?? '',
       '#required' => FALSE,
     ];
@@ -154,54 +132,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
     $form += $this->buildOptionsForm($form_state, $mode);
 
-    $form['control_action'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Control Action'),
-      '#options' => [
-        'none' => $this->t('None'),
-        'interrupt' => $this->t('Interrupt'),
-        'mcp_status' => $this->t('MCP Status'),
-        'set_permission_mode' => $this->t('Set Permission Mode'),
-        'set_model' => $this->t('Set Model'),
-        'rewind_files' => $this->t('Rewind Files'),
-      ],
-      '#default_value' => $form_state->getValue('control_action') ?? 'none',
-      '#access' => !in_array($mode, ['query', 'session_query'], TRUE),
-    ];
-
-    $form['control_mode'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Permission Mode'),
-      '#default_value' => PermissionPresetHelper::normalizePermissionMode($form_state->getValue('control_mode')) ?? 'default',
-      '#states' => [
-        'visible' => [
-          ':input[name="control_action"]' => ['value' => 'set_permission_mode'],
-        ],
-      ],
-    ];
-
-    $form['control_model'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Model'),
-      '#default_value' => $form_state->getValue('control_model') ?? '',
-      '#states' => [
-        'visible' => [
-          ':input[name="control_action"]' => ['value' => 'set_model'],
-        ],
-      ],
-    ];
-
-    $form['control_user_message_id'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('User Message ID (for rewind)'),
-      '#default_value' => $form_state->getValue('control_user_message_id') ?? '',
-      '#states' => [
-        'visible' => [
-          ':input[name="control_action"]' => ['value' => 'rewind_files'],
-        ],
-      ],
-    ];
-
     $form['callbacks'] = [
       '#type' => 'details',
       '#title' => $this->t('Callbacks (Debug)'),
@@ -213,58 +143,10 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#type' => 'select',
       '#title' => $this->t('canUseTool behavior'),
       '#options' => [
-        'none' => $this->t('None'),
-        'allow' => $this->t('Allow'),
-        'deny' => $this->t('Deny'),
+        'none' => $this->t('None (SDK default)'),
         'interactive' => $this->t('Interactive popup (Terminal stream only)'),
       ],
       '#default_value' => $form_state->getValue('can_use_tool') ?? 'none',
-    ];
-
-    $form['callbacks']['can_use_tool_message'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Deny message'),
-      '#default_value' => $form_state->getValue('can_use_tool_message') ?? 'Denied by debug UI',
-      '#states' => [
-        'visible' => [
-          ':input[name="can_use_tool"]' => ['value' => 'deny'],
-        ],
-      ],
-    ];
-
-    $form['callbacks']['can_use_tool_interrupt'] = [
-      '#type' => 'checkbox',
-      '#title' => $this->t('Interrupt on deny'),
-      '#default_value' => (bool) ($form_state->getValue('can_use_tool_interrupt') ?? FALSE),
-      '#states' => [
-        'visible' => [
-          ':input[name="can_use_tool"]' => ['value' => 'deny'],
-        ],
-      ],
-    ];
-
-    $form['callbacks']['hook_matchers'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Hooks config (JSON)'),
-      '#rows' => 6,
-      '#description' => $this->t('Map hook events to matchers. Each matcher can include "matcher", "timeout", and "hooks" (array of names). Example: {"tool_use":[{"matcher":{"tool_name":"bash"},"hooks":["default"]}]}'),
-      '#default_value' => $form_state->getValue('hook_matchers') ?? '',
-    ];
-
-    $form['callbacks']['hook_output'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Hook callback output (JSON)'),
-      '#rows' => 4,
-      '#description' => $this->t('Returned for any hook callback. Example: {"continue_":true}'),
-      '#default_value' => $form_state->getValue('hook_output') ?? '',
-    ];
-
-    $form['callbacks']['mcp_response'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('MCP response (JSON)'),
-      '#rows' => 4,
-      '#description' => $this->t('If set, responses to mcp_message will be this JSON object.'),
-      '#default_value' => $form_state->getValue('mcp_response') ?? '',
     ];
 
     $form['actions'] = ['#type' => 'actions'];
@@ -301,7 +183,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
     $prompt = trim((string) $form_state->getValue('prompt'));
     if ($prompt === '') {
-      $form_state->setErrorByName('prompt', $this->t('Prompt / Messages is required.'));
+      $form_state->setErrorByName('prompt', $this->t('Prompt is required.'));
       return;
     }
 
@@ -356,12 +238,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
     $buildInfo = $form_state->getBuildInfo();
     $mode = (string) ($buildInfo['args'][0] ?? 'client');
-    $inputType = (string) $form_state->getValue('input_type');
-    $promptRaw = (string) $form_state->getValue('prompt');
-    $controlAction = (string) $form_state->getValue('control_action');
-    $controlMode = (string) $form_state->getValue('control_mode');
-    $controlModel = (string) $form_state->getValue('control_model');
-    $controlUserMessageId = (string) $form_state->getValue('control_user_message_id');
+    $promptRaw = trim((string) $form_state->getValue('prompt'));
     $sessionContinue = $mode === 'session_query' ? (bool) $form_state->getValue('session_continue') : FALSE;
     $bridgeMode = $this->resolveBridgeMode($form_state, $mode);
     $requestedResume = null;
@@ -377,44 +254,38 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $form_state->set('ai_claude_agent_sdk_debug_bridge_tools', $selectedBridgeTools);
     $form_state->set('ai_claude_agent_sdk_debug_bridge_tool_config', $this->extractBridgeToolConfigs($form_state));
 
-    $optionsData = $this->collectOptions($form_state, $mode);
-    if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['initializeTimeout'])) {
-      // Keep client initialization failures fast in debug mode.
-      $optionsData['initializeTimeout'] = 2.0;
-    }
-    if (($mode === 'client' || $mode === 'terminal') && !isset($optionsData['skipInitialize'])) {
-      $optionsData['skipInitialize'] = TRUE;
-    }
+    $sdkOptions = $this->collectOptions($form_state, $mode);
+
     if ($mode === 'session_query') {
       if (!$sessionContinue) {
-        unset($optionsData['resume']);
-        $optionsData['continueConversation'] = FALSE;
+        unset($sdkOptions['resume']);
+        $sdkOptions['continueConversation'] = FALSE;
         $form_state->set('ai_claude_agent_sdk_debug_resume', '');
       }
       else {
-        $resume = trim((string) ($optionsData['resume'] ?? ''));
+        $resume = trim((string) ($sdkOptions['resume'] ?? ''));
         if ($resume === '') {
           $resume = (string) ($form_state->get('ai_claude_agent_sdk_debug_resume') ?? '');
         }
         if ($resume === '') {
-          unset($optionsData['resume']);
-          $optionsData['continueConversation'] = FALSE;
+          unset($sdkOptions['resume']);
+          $sdkOptions['continueConversation'] = FALSE;
         }
         else {
           if (count($this->sessionFileStore->listSessionFiles($resume)) === 0) {
             $this->messenger()->addError($this->t('Resume session ID not found in local Claude session files: @id', ['@id' => $resume]));
             return;
           }
-          $optionsData['resume'] = $resume;
-          $optionsData['continueConversation'] = TRUE;
+          $sdkOptions['resume'] = $resume;
+          $sdkOptions['continueConversation'] = TRUE;
           $requestedResume = $resume;
         }
       }
       $form_state->set('ai_claude_agent_sdk_debug_session_continue', $sessionContinue);
     }
 
-    $permissionPresetResult = PermissionPresetHelper::apply($optionsData);
-    $optionsData = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $optionsData;
+    $permissionPresetResult = PermissionPresetHelper::apply($sdkOptions);
+    $sdkOptions = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $sdkOptions;
     $permissionPresetWarnings = is_array($permissionPresetResult['warnings'] ?? null) ? $permissionPresetResult['warnings'] : [];
     foreach ($permissionPresetWarnings as $permissionPresetWarning) {
       if (is_string($permissionPresetWarning) && $permissionPresetWarning !== '') {
@@ -424,7 +295,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       }
     }
 
-    if (($optionsData['bridgeMode'] ?? null) === 'cli' && !empty($selectedBridgeTools)) {
+    if (($sdkOptions['bridgeMode'] ?? null) === 'cli' && !empty($selectedBridgeTools)) {
       $ignoredToolIds = [];
       foreach ($selectedBridgeTools as $toolId) {
         if ($this->normalizeBridgeToolId($toolId) === null) {
@@ -438,17 +309,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       }
     }
 
-    $options = $this->buildOptions($optionsData, [
-      'can_use_tool' => $form_state->getValue('can_use_tool'),
-      'can_use_tool_message' => $form_state->getValue('can_use_tool_message'),
-      'can_use_tool_interrupt' => $form_state->getValue('can_use_tool_interrupt'),
-      'hook_matchers' => $form_state->getValue('hook_matchers'),
-      'hook_output' => $form_state->getValue('hook_output'),
-      'mcp_response' => $form_state->getValue('mcp_response'),
-    ]);
-
-    $sessionMeta = $this->buildSessionMeta($mode, $optionsData, 'form');
-
     if (!$this->processLimiter->canStart()) {
       $status = $this->processLimiter->getStatus();
       $this->messenger()->addError($this->t('Claude CLI limit reached (@running running, limit @limit). Try again after other sessions finish.', [
@@ -458,37 +318,14 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       return;
     }
 
+    // Remove internal-only options before sending to sidecar.
+    $cleanOptions = $sdkOptions;
+    unset($cleanOptions['bridgeMode'], $cleanOptions['bridgeAllowedTools'], $cleanOptions['permissionPreset']);
+
     try {
       $this->lastSessionId = null;
 
-      if ($mode === 'query' || $mode === 'session_query') {
-        $output = $this->runQuery($promptRaw, $options, $sessionMeta);
-      }
-      else {
-        if ($inputType === 'jsonl') {
-          $messages = $this->parseJsonl($promptRaw);
-          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta, $mode);
-        }
-        elseif ($inputType === 'deepchat') {
-          $messages = $this->convertDeepChatToMessages($promptRaw);
-          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta, $mode);
-        }
-        else {
-          $message = [
-            'type' => 'user',
-            'message' => [
-              'role' => 'user',
-              'content' => $promptRaw,
-            ],
-            'parent_tool_use_id' => null,
-          ];
-          if (!in_array($mode, ['client', 'terminal'], TRUE)) {
-            $message['session_id'] = 'default';
-          }
-          $messages = [$message];
-          $output = $this->runStreaming($messages, $options, $controlAction, $controlMode, $controlModel, $controlUserMessageId, $sessionMeta, $mode);
-        }
-      }
+      $output = $this->bridge->collectResponseDirect($promptRaw, $cleanOptions);
 
       if ($mode === 'session_query' && is_string($requestedResume) && $requestedResume !== '' && is_string($this->lastSessionId) && $this->lastSessionId !== '' && $this->lastSessionId !== $requestedResume) {
         throw new \RuntimeException(sprintf('Resume session mismatch: requested %s but Claude returned %s. Response rejected.', $requestedResume, $this->lastSessionId));
@@ -569,115 +406,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $form_state->set('ai_claude_agent_sdk_debug_bridge_tools', array_values($selected));
   }
 
-  private function buildOptions(array $optionsData, array $debugCallbacks): ClaudeAgentOptions {
-    $permissionPresetResult = PermissionPresetHelper::apply($optionsData);
-    $optionsData = is_array($permissionPresetResult['options'] ?? null) ? $permissionPresetResult['options'] : $optionsData;
-
-    $cliPath = $optionsData['cliPath'] ?? getenv('CLAUDE_CLI_PATH') ?: null;
-    $cwd = $optionsData['cwd'] ?? DRUPAL_ROOT;
-
-    $canUseTool = $this->buildCanUseToolCallback($debugCallbacks);
-    $hooks = $this->buildHookConfig($debugCallbacks);
-    $mcpHandler = $this->buildMcpHandler($debugCallbacks);
-
-    return new ClaudeAgentOptions(
-      cliPath: $cliPath,
-      cwd: $cwd,
-      systemPrompt: $optionsData['systemPrompt'] ?? null,
-      tools: $optionsData['tools'] ?? null,
-      allowedTools: $optionsData['allowedTools'] ?? null,
-      disallowedTools: $optionsData['disallowedTools'] ?? null,
-      maxTurns: $optionsData['maxTurns'] ?? null,
-      maxBudgetUsd: $optionsData['maxBudgetUsd'] ?? null,
-      model: $optionsData['model'] ?? null,
-      fallbackModel: $optionsData['fallbackModel'] ?? null,
-      betas: $optionsData['betas'] ?? null,
-      permissionPromptToolName: $optionsData['permissionPromptToolName'] ?? null,
-      permissionMode: $optionsData['permissionMode'] ?? null,
-      continueConversation: $optionsData['continueConversation'] ?? false,
-      resume: $optionsData['resume'] ?? null,
-      settings: $optionsData['settings'] ?? null,
-      sandbox: $optionsData['sandbox'] ?? null,
-      addDirs: $optionsData['addDirs'] ?? null,
-      mcpServers: $optionsData['mcpServers'] ?? null,
-      includePartialMessages: $optionsData['includePartialMessages'] ?? false,
-      forkSession: $optionsData['forkSession'] ?? false,
-      agents: $optionsData['agents'] ?? null,
-      settingSources: $optionsData['settingSources'] ?? null,
-      plugins: $optionsData['plugins'] ?? null,
-      maxThinkingTokens: $optionsData['maxThinkingTokens'] ?? null,
-      outputFormat: $optionsData['outputFormat'] ?? null,
-      maxBufferSize: $optionsData['maxBufferSize'] ?? null,
-      enableFileCheckpointing: $optionsData['enableFileCheckpointing'] ?? false,
-      canUseTool: $canUseTool,
-      hooks: $hooks,
-      mcpMessageHandler: $mcpHandler,
-      skipInitialize: $optionsData['skipInitialize'] ?? false,
-      initializeTimeout: $optionsData['initializeTimeout'] ?? null,
-      user: $optionsData['user'] ?? null,
-      env: $this->authEnvResolver->buildEnv($optionsData['env'] ?? []),
-      extraArgs: $optionsData['extraArgs'] ?? [],
-    );
-  }
-
-  private function runStreaming(array $messages, ClaudeAgentOptions $options, string $controlAction, string $controlMode, string $controlModel, string $controlUserMessageId, array $sessionMeta, string $mode): string {
-    $stream = (function () use ($messages): iterable {
-      foreach ($messages as $message) {
-        yield $message;
-      }
-    })();
-
-    $client = null;
-    try {
-      $client = new Client($options);
-      $client->connect($stream);
-
-      $this->applyControl($client, $controlAction, $controlMode, $controlModel, $controlUserMessageId);
-
-      $output = '';
-      foreach ($client->receiveMessages() as $message) {
-        $raw = $message->getRaw();
-        $this->recordSessionFromMessage($raw, $sessionMeta);
-        if (($raw['type'] ?? '') === 'assistant') {
-          $content = $raw['message']['content'] ?? [];
-          if (is_array($content)) {
-            foreach ($content as $block) {
-              if (($block['type'] ?? '') === 'text') {
-                $output .= (string) ($block['text'] ?? '');
-              }
-            }
-          }
-        }
-      }
-
-      return $output;
-    }
-    finally {
-      if ($client instanceof Client) {
-        $client->close();
-      }
-    }
-  }
-
-  private function runQuery(string $prompt, ClaudeAgentOptions $options, array $sessionMeta): string {
-    $output = '';
-    foreach (Query::query($prompt, $options) as $message) {
-      $raw = $message->getRaw();
-      $this->recordSessionFromMessage($raw, $sessionMeta);
-      if (($raw['type'] ?? '') === 'assistant') {
-        $content = $raw['message']['content'] ?? [];
-        if (is_array($content)) {
-          foreach ($content as $block) {
-            if (($block['type'] ?? '') === 'text') {
-              $output .= (string) ($block['text'] ?? '');
-            }
-          }
-        }
-      }
-    }
-    return $output;
-  }
-
   private function buildSessionMeta(string $mode, array $optionsData, string $source): array {
     $uid = \Drupal::currentUser()->id();
     $uid = is_numeric($uid) && (int) $uid > 0 ? (int) $uid : null;
@@ -692,15 +420,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     ];
   }
 
-  private function recordSessionFromMessage(array $raw, array $sessionMeta): void {
-    $sessionId = $raw['session_id'] ?? null;
-    if (!is_string($sessionId) || $sessionId === '' || $sessionId === 'default') {
-      return;
-    }
-    $this->lastSessionId = $sessionId;
-    $this->sessionTracker->record($sessionId, $sessionMeta);
-  }
-
   private function buildOptionsForm(FormStateInterface $form_state, string $mode): array {
     $sdkConfig = $this->config('ai_claude_agent_sdk.settings');
     $bridgeSupported = $this->isBridgeModeSupported($mode);
@@ -710,13 +429,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#type' => 'details',
       '#title' => $this->t('Basic Options'),
       '#open' => TRUE,
-    ];
-
-    $form['options_basic']['option_cli_path'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Claude CLI path'),
-      '#description' => $this->t('Leave empty to use the system default or CLAUDE_CLI_PATH env var.'),
-      '#default_value' => $form_state->getValue('option_cli_path') ?? ($sdkConfig->get('cli_path') ?? ''),
     ];
 
     $form['options_basic']['option_cwd'] = [
@@ -1137,25 +849,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#min' => 0,
     ];
 
-    $form['options_advanced']['option_initialize_timeout'] = [
-      '#type' => 'number',
-      '#title' => $this->t('Initialize timeout (seconds)'),
-      '#default_value' => $form_state->getValue('option_initialize_timeout') ?? '',
-      '#min' => 0,
-      '#step' => 0.1,
-    ];
-
-    $form['options_advanced']['option_skip_initialize'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Skip client initialize control request'),
-      '#description' => $this->t('Workaround for environments where Claude CLI stream mode does not respond to initialize control requests.'),
-      '#options' => [
-        '0' => $this->t('No'),
-        '1' => $this->t('Yes'),
-      ],
-      '#default_value' => $form_state->getValue('option_skip_initialize') ?? ($mode === 'client' || $mode === 'terminal' ? '1' : '0'),
-    ];
-
     $form['options_advanced']['option_user'] = [
       '#type' => 'textfield',
       '#title' => $this->t('User'),
@@ -1169,23 +862,11 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       '#default_value' => $form_state->getValue('option_env') ?? '',
     ];
 
-    $form['options_advanced']['option_extra_args'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Extra args (one per line)'),
-      '#rows' => 2,
-      '#default_value' => $form_state->getValue('option_extra_args') ?? '',
-    ];
-
     return $form;
   }
 
   private function collectOptions(FormStateInterface $form_state, string $mode): array {
     $options = [];
-
-    $cliPath = trim((string) $form_state->getValue('option_cli_path'));
-    if ($cliPath !== '') {
-      $options['cliPath'] = $cliPath;
-    }
 
     $cwd = trim((string) $form_state->getValue('option_cwd'));
     if ($cwd !== '') {
@@ -1281,7 +962,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
     $addDirs = $this->parseLines($form_state->getValue('option_add_dirs'));
     if (!empty($addDirs)) {
-      $options['addDirs'] = $addDirs;
+      $options['additionalDirectories'] = $addDirs;
     }
 
     $mcpServers = $this->parseJson($form_state->getValue('option_mcp_servers'));
@@ -1319,13 +1000,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $options['maxBufferSize'] = $maxBufferSize;
     }
 
-    $initializeTimeout = $this->parseFloat($form_state->getValue('option_initialize_timeout'));
-    if ($initializeTimeout !== null) {
-      $options['initializeTimeout'] = $initializeTimeout;
-    }
-
-    $options['skipInitialize'] = $this->parseBoolSelect($form_state->getValue('option_skip_initialize'));
-
     $user = trim((string) $form_state->getValue('option_user'));
     if ($user !== '') {
       $options['user'] = $user;
@@ -1334,11 +1008,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $env = $this->parseJson($form_state->getValue('option_env'));
     if (is_array($env)) {
       $options['env'] = $env;
-    }
-
-    $extraArgs = $this->parseLines($form_state->getValue('option_extra_args'));
-    if (!empty($extraArgs)) {
-      $options['extraArgs'] = $extraArgs;
     }
 
     return $this->applyBridgeModeOptions($options, $form_state, $mode);
@@ -1390,7 +1059,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     $options['env'] = $env;
 
     if (!isset($options['permissionMode']) || trim((string) $options['permissionMode']) === '') {
-      // Bridge mode relies on Bash/Drush orchestration; default to CLI default permission behavior unless explicitly overridden.
       $options['permissionMode'] = 'default';
     }
 
@@ -1650,8 +1318,13 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     if (!\Drupal::hasService('plugin.manager.ai.function_calls')) {
       return [];
     }
-    $definitions = \Drupal::service('plugin.manager.ai.function_calls')->getDefinitions();
-    return is_array($definitions) ? $definitions : [];
+    try {
+      $definitions = \Drupal::service('plugin.manager.ai.function_calls')->getDefinitions();
+      return is_array($definitions) ? $definitions : [];
+    }
+    catch (\Throwable $e) {
+      return [];
+    }
   }
 
   private function parseLines($value): array {
@@ -1691,167 +1364,6 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
   private function parseBoolSelect($value): bool {
     return (string) $value === '1';
-  }
-
-  private function parseJsonl(string $raw): array {
-    $messages = [];
-    $lines = preg_split('/\r\n|\r|\n/', $raw);
-    foreach ($lines as $line) {
-      $line = trim($line);
-      if ($line === '') {
-        continue;
-      }
-      $decoded = Json::decode($line);
-      if (!is_array($decoded)) {
-        throw new \RuntimeException('Invalid JSONL line: ' . $line);
-      }
-      $messages[] = $decoded;
-    }
-    return $messages;
-  }
-
-  private function convertDeepChatToMessages(string $raw): array {
-    $decoded = Json::decode($raw);
-    if (!is_array($decoded) || !isset($decoded['messages']) || !is_array($decoded['messages'])) {
-      return [];
-    }
-
-    $messages = [];
-    foreach ($decoded['messages'] as $message) {
-      if (!is_array($message)) {
-        continue;
-      }
-      $role = $message['role'] ?? 'user';
-      $text = $message['text'] ?? '';
-      $messages[] = [
-        'type' => $role,
-        'message' => [
-          'role' => $role,
-          'content' => $text,
-        ],
-        'parent_tool_use_id' => null,
-      ];
-    }
-
-    return $messages;
-  }
-
-  private function applyControl(Client $client, string $action, string $mode, string $model, string $userMessageId): void {
-    if ($action === 'interrupt') {
-      $client->interrupt();
-    }
-    elseif ($action === 'mcp_status') {
-      $client->getMcpStatus();
-    }
-    elseif ($action === 'set_permission_mode') {
-      $normalizedMode = PermissionPresetHelper::normalizePermissionMode($mode);
-      $client->setPermissionMode($normalizedMode ?? 'default');
-    }
-    elseif ($action === 'set_model') {
-      $client->setModel($model !== '' ? $model : null);
-    }
-    elseif ($action === 'rewind_files') {
-      if ($userMessageId !== '') {
-        $client->rewindFiles($userMessageId);
-      }
-    }
-  }
-
-  private function buildCanUseToolCallback(array $debugCallbacks): ?callable {
-    $mode = $debugCallbacks['can_use_tool'] ?? 'none';
-    if ($mode === 'none') {
-      return null;
-    }
-
-    if ($mode === 'allow') {
-      return function (string $toolName, array $input, $context) {
-        return new PermissionResultAllow();
-      };
-    }
-
-    if ($mode === 'deny') {
-      $message = (string) ($debugCallbacks['can_use_tool_message'] ?? 'Denied by debug UI');
-      $interrupt = (bool) ($debugCallbacks['can_use_tool_interrupt'] ?? false);
-      return function (string $toolName, array $input, $context) use ($message, $interrupt) {
-        return new PermissionResultDeny($message, $interrupt);
-      };
-    }
-
-    if ($mode === 'interactive') {
-      return function (string $toolName, array $input, $context) {
-        return new PermissionResultDeny('Interactive approval is only supported in Terminal stream mode.', false);
-      };
-    }
-
-    return null;
-  }
-
-  private function buildHookConfig(array $debugCallbacks): ?array {
-    $raw = (string) ($debugCallbacks['hook_matchers'] ?? '');
-    if (trim($raw) === '') {
-      return null;
-    }
-    $decoded = Json::decode($raw);
-    if (!is_array($decoded)) {
-      return null;
-    }
-
-    $hookOutput = $this->parseJsonOrNull((string) ($debugCallbacks['hook_output'] ?? ''));
-
-    $config = [];
-    foreach ($decoded as $event => $matchers) {
-      if (!is_array($matchers)) {
-        continue;
-      }
-      $config[$event] = [];
-      foreach ($matchers as $matcher) {
-        if (!is_array($matcher)) {
-          continue;
-        }
-        $hooks = [];
-        $hookNames = $matcher['hooks'] ?? [];
-        if (is_array($hookNames)) {
-          foreach ($hookNames as $name) {
-            $hooks[] = function () use ($hookOutput) {
-              return $hookOutput ?? ['continue_' => true];
-            };
-          }
-        }
-        $config[$event][] = [
-          'matcher' => $matcher['matcher'] ?? null,
-          'timeout' => $matcher['timeout'] ?? null,
-          'hooks' => $hooks,
-        ];
-      }
-    }
-
-    return $config;
-  }
-
-  private function buildMcpHandler(array $debugCallbacks): ?callable {
-    $raw = (string) ($debugCallbacks['mcp_response'] ?? '');
-    if (trim($raw) === '') {
-      return null;
-    }
-    $decoded = $this->parseJsonOrNull($raw);
-    if (!is_array($decoded)) {
-      return null;
-    }
-
-    return function (string $serverName, array $message) use ($decoded) {
-      return $decoded;
-    };
-  }
-
-  private function parseJsonOrNull(string $raw): ?array {
-    if (trim($raw) === '') {
-      return null;
-    }
-    $decoded = Json::decode($raw);
-    if (!is_array($decoded)) {
-      return null;
-    }
-    return $decoded;
   }
 
 }

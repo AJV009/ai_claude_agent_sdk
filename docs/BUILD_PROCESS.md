@@ -53,7 +53,6 @@ Base setup also defaults SDK auth to environment mode:
 Both setup commands create/maintain:
 
 - Module checkout: `modules/ai_claude_agent_sdk` (git remote: `git@git.drupal.org:project/ai_claude_agent_sdk.git`)
-- Library checkout: `libraries/claude-agent-sdk-php` (git remote: `git@github.com:jamieaa64/claude-agent-sdk-php.git`)
 - Contrib symlink: `web/modules/contrib/ai_claude_agent_sdk -> ../../../modules/ai_claude_agent_sdk`
 
 ## 2) Dev Build Process (Git Workflow)
@@ -78,19 +77,16 @@ Use this when you are actively developing module and library code and need push/
 
 ```bash
 git -C web/modules/contrib/ai_claude_agent_sdk remote -v
-git -C libraries/claude-agent-sdk-php remote -v
 ```
 
 Expected:
 - Module points at Drupal GitLab via SSH (`git@git.drupal.org:project/ai_claude_agent_sdk.git`).
-- Library points at GitHub via SSH (`git@github.com:jamieaa64/claude-agent-sdk-php.git`).
 
 ### Daily dev loop
 
 1. Edit module in `modules/ai_claude_agent_sdk`.
-2. Edit library in `libraries/claude-agent-sdk-php`.
-3. Run `ddev drush cr`.
-4. Commit and push in each repo separately.
+2. Run `ddev drush cr`.
+3. Commit and push.
 
 ### Optional console integration submodule
 

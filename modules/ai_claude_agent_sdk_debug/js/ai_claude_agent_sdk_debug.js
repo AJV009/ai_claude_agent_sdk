@@ -24,14 +24,13 @@
         return 'client';
       })();
       const debugMode = modeFromSettings || modeFromPath;
-      const permissionDecisionUrl = (drupalSettings && drupalSettings.claudeAgentSdkDebug && drupalSettings.claudeAgentSdkDebug.permissionDecisionUrl) || '';
+      const permissionResponseUrl = (drupalSettings && drupalSettings.claudeAgentSdkDebug && drupalSettings.claudeAgentSdkDebug.permissionResponseUrl) || '';
       const runtimeId = 'runtime-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 
       const $streamButton = $('<button type="button" class="button">Stream via SSE</button>');
       const $output = $('<textarea readonly rows="12" style="width:100%;"></textarea>');
 
       if (debugMode === 'terminal') {
-        $form.find('[name="input_type"]').closest('.form-item').hide();
         $form.find('[name="prompt"]').closest('.form-item').hide();
         $form.find('div.form-actions').hide();
         $form.find('input[type="submit"], button[type="submit"]').hide();
@@ -54,6 +53,7 @@
 
       const permissionQueue = [];
       let activePermissionRequest = null;
+      let queryId = null;
       const $permissionModal = $('<div class="claude-agent-sdk-permission-modal" style="display:none;"></div>');
       const $permissionPanel = $('<div class="claude-agent-sdk-permission-panel"></div>');
       const $permissionTitle = $('<h3>Tool Permission Required</h3>');
@@ -61,11 +61,10 @@
       const $permissionTool = $('<div class="claude-agent-sdk-permission-tool"></div>');
       const $permissionInput = $('<pre class="claude-agent-sdk-permission-input"></pre>');
       const $permissionActions = $('<div class="claude-agent-sdk-permission-actions"></div>');
-      const $permissionAllowOnce = $('<button type="button" class="button button--primary">Allow once</button>');
-      const $permissionAllowSession = $('<button type="button" class="button">Allow for session</button>');
+      const $permissionAllowOnce = $('<button type="button" class="button button--primary">Allow</button>');
       const $permissionDeny = $('<button type="button" class="button">Deny</button>');
 
-      $permissionActions.append($permissionAllowOnce).append($permissionAllowSession).append($permissionDeny);
+      $permissionActions.append($permissionAllowOnce).append($permissionDeny);
       $permissionBody.append($permissionTool).append($permissionInput);
       $permissionPanel.append($permissionTitle).append($permissionBody).append($permissionActions);
       $permissionModal.append($permissionPanel);
@@ -84,10 +83,7 @@
       }
 
       $permissionAllowOnce.on('click', function () {
-        submitPermissionDecision('allow_once');
-      });
-      $permissionAllowSession.on('click', function () {
-        submitPermissionDecision('allow_session');
+        submitPermissionDecision('allow');
       });
       $permissionDeny.on('click', function () {
         submitPermissionDecision('deny');
@@ -102,13 +98,8 @@
           const $optionsBasic = $form.find('[data-drupal-selector="edit-options-basic"]').closest('details');
           const $optionsAdvanced = $form.find('[data-drupal-selector="edit-options-advanced"]').closest('details');
           const $callbacks = $form.find('[data-drupal-selector="edit-callbacks"]').closest('details');
-          const $controlAction = $form.find('[name="control_action"]').closest('.form-item');
-          const $controlMode = $form.find('[name="control_mode"]').closest('.form-item');
-          const $controlModel = $form.find('[name="control_model"]').closest('.form-item');
-          const $controlRewind = $form.find('[name="control_user_message_id"]').closest('.form-item');
 
           $sidebar.append($optionsBasic, $optionsAdvanced, $callbacks);
-          $sidebar.append($controlAction, $controlMode, $controlModel, $controlRewind);
 
           $main.append('<h3>Terminal</h3>');
           $main.append($chatStatus).append($rawToggle).append($chatLog).append($chatControls).append($chatSession).append($rawLog);
@@ -158,19 +149,7 @@
                   const json = part.slice(6);
                   try {
                     const data = JSON.parse(json);
-                    if (data.permission_request) {
-                      queuePermissionRequest(data.permission_request);
-                    }
-                    if (data.message) {
-                      $output.val($output.val() + JSON.stringify(data.message) + "\n");
-                    }
-                    if (data.session_id) {
-                      chatSessionId = data.session_id;
-                      $chatSession.text('Session: ' + chatSessionId);
-                    }
-                    if (data.error) {
-                      $output.val($output.val() + 'ERROR: ' + data.error + "\n");
-                    }
+                    handleSseEvent(data, $output, null);
                   } catch (e) {
                     $output.val($output.val() + json + "\n");
                   }
@@ -200,7 +179,6 @@
         setStatus('Sending...');
 
         const payload = buildChatPayload($form, prompt, chatSessionId);
-        payload.options.includePartialMessages = true;
 
         const streamUrl = (drupalSettings && drupalSettings.claudeAgentSdkDebug && drupalSettings.claudeAgentSdkDebug.streamUrl) || '/claudeagentsdkdebug/stream';
 
@@ -236,25 +214,7 @@
                   try {
                     const data = JSON.parse(json);
                     appendRawEvent(json);
-                    if (data.session_id) {
-                      chatSessionId = data.session_id;
-                      $chatSession.text('Session: ' + chatSessionId);
-                    }
-                    if (data.status) {
-                      setStatus(data.status);
-                    }
-                    if (data.permission_request) {
-                      queuePermissionRequest(data.permission_request);
-                    }
-                    if (data.message) {
-                      const text = extractAssistantText(data.message);
-                      if (text) {
-                        appendTerminalLine(text, 'assistant');
-                      }
-                    }
-                    if (data.error) {
-                      appendTerminalLine('ERROR: ' + data.error, 'error');
-                    }
+                    handleSseEvent(data, null, 'terminal');
                   } catch (e) {
                     appendTerminalLine('ERROR: ' + json, 'error');
                   }
@@ -271,99 +231,100 @@
         });
       });
 
-      function buildPayload($form) {
-        const inputType = $form.find('[name="input_type"]').val();
-        const prompt = $form.find('[name="prompt"]').val();
-        const controlAction = $form.find('[name="control_action"]').val();
-        const controlMode = $form.find('[name="control_mode"]').val();
-        const controlModel = $form.find('[name="control_model"]').val();
-        const controlUserMessageId = $form.find('[name="control_user_message_id"]').val();
-
-        const canUseTool = $form.find('[name="can_use_tool"]').val();
-        const canUseToolMessage = $form.find('[name="can_use_tool_message"]').val();
-        const canUseToolInterrupt = $form.find('[name="can_use_tool_interrupt"]').is(':checked');
-        const hookMatchers = $form.find('[name="hook_matchers"]').val();
-        const hookOutput = $form.find('[name="hook_output"]').val();
-        const mcpResponse = $form.find('[name="mcp_response"]').val();
-
-        const options = buildOptionsFromForm($form);
-
-        let messages = [];
-        if (inputType === 'jsonl') {
-          messages = parseJsonl(prompt);
-        } else if (inputType === 'deepchat') {
-          messages = convertDeepChat(prompt);
-        } else {
-          const firstMessage = {
-            type: 'user',
-            message: { role: 'user', content: String(prompt) },
-            parent_tool_use_id: null,
-          };
-          if (debugMode !== 'client' && debugMode !== 'terminal') {
-            firstMessage.session_id = 'default';
+      function handleSseEvent(data, $outputArea, outputMode) {
+        // Handle sidecar SSE event format.
+        if (data.type === 'query_start') {
+          queryId = data.queryId;
+          if (outputMode === 'terminal') {
+            setStatus('connected');
           }
-          messages = [firstMessage];
         }
+        if (data.type === 'assistant') {
+          const text = extractAssistantText(data);
+          if (text) {
+            if (outputMode === 'terminal') {
+              appendTerminalLine(text, 'assistant');
+            } else if ($outputArea) {
+              $outputArea.val($outputArea.val() + text + "\n");
+            }
+          }
+        }
+        if (data.type === 'result' && data.subtype === 'success') {
+          if (data.result) {
+            if (outputMode === 'terminal') {
+              appendTerminalLine(data.result, 'assistant');
+            } else if ($outputArea) {
+              $outputArea.val($outputArea.val() + data.result + "\n");
+            }
+          }
+          if (data.session_id) {
+            chatSessionId = data.session_id;
+            $chatSession.text('Session: ' + chatSessionId);
+          }
+        }
+        if (data.type === 'error') {
+          const msg = 'ERROR: ' + (data.message || 'Unknown');
+          if (outputMode === 'terminal') {
+            appendTerminalLine(msg, 'error');
+          } else if ($outputArea) {
+            $outputArea.val($outputArea.val() + msg + "\n");
+          }
+        }
+        if (data.type === 'permission_request') {
+          queuePermissionRequest({
+            query_id: data.queryId,
+            request_id: data.requestId,
+            tool_name: data.toolName,
+            input: data.input
+          });
+        }
+        // Track session_id from any event that has it.
+        if (data.session_id && data.session_id !== 'default') {
+          chatSessionId = data.session_id;
+          $chatSession.text('Session: ' + chatSessionId);
+        }
+      }
 
-        const control = buildControl(controlAction, controlMode, controlModel, controlUserMessageId);
+      function buildPayload($form) {
+        const prompt = $form.find('[name="prompt"]').val();
+        const options = buildOptionsFromForm($form);
+        const canUseTool = $form.find('[name="can_use_tool"]').val();
 
         return {
+          prompt: String(prompt || ''),
           mode: debugMode,
           runtime_id: runtimeId,
           options: options,
-          messages: messages,
-          control: control,
           debug_callbacks: {
-            can_use_tool: canUseTool,
-            can_use_tool_message: canUseToolMessage,
-            can_use_tool_interrupt: canUseToolInterrupt,
-            hook_matchers: hookMatchers,
-            hook_output: hookOutput,
-            mcp_response: mcpResponse,
-          },
+            can_use_tool: canUseTool
+          }
         };
       }
 
       function buildChatPayload($form, prompt, sessionId) {
         const options = buildOptionsFromForm($form);
         options.continueConversation = !!sessionId;
+        options.includePartialMessages = true;
         if (sessionId) {
           options.resume = sessionId;
         }
 
-        const message = {
-          type: 'user',
-          message: { role: 'user', content: String(prompt) },
-          parent_tool_use_id: null,
-        };
-        if (sessionId) {
-          message.session_id = sessionId;
-        }
+        const canUseTool = $form.find('[name="can_use_tool"]').val();
 
-        const messages = [message];
-
-        const payload = {
+        return {
+          prompt: String(prompt),
           mode: debugMode,
           runtime_id: runtimeId,
           options: options,
-          messages: messages,
-          control: null,
-          debug_callbacks: buildDebugCallbacks($form),
+          session_id: sessionId || null,
+          debug_callbacks: {
+            can_use_tool: canUseTool
+          }
         };
-        if (sessionId) {
-          payload.session_id = sessionId;
-        }
-
-        return payload;
       }
 
       function buildOptionsFromForm($form) {
         const options = {};
-
-        const cliPath = String($form.find('[name="option_cli_path"]').val() || '').trim();
-        if (cliPath) {
-          options.cliPath = cliPath;
-        }
 
         const cwd = String($form.find('[name="option_cwd"]').val() || '').trim();
         if (cwd) {
@@ -458,7 +419,7 @@
 
         const addDirs = parseLines($form.find('[name="option_add_dirs"]').val());
         if (addDirs.length) {
-          options.addDirs = addDirs;
+          options.additionalDirectories = addDirs;
         }
 
         const mcpServers = parseJson($form.find('[name="option_mcp_servers"]').val());
@@ -496,13 +457,6 @@
           options.maxBufferSize = parseInt(maxBufferSize, 10);
         }
 
-        const initializeTimeout = String($form.find('[name="option_initialize_timeout"]').val() || '').trim();
-        if (initializeTimeout) {
-          options.initializeTimeout = parseFloat(initializeTimeout);
-        }
-
-        options.skipInitialize = readBoolSelect($form, 'option_skip_initialize');
-
         const user = String($form.find('[name="option_user"]').val() || '').trim();
         if (user) {
           options.user = user;
@@ -511,11 +465,6 @@
         const env = parseJson($form.find('[name="option_env"]').val());
         if (env) {
           options.env = env;
-        }
-
-        const extraArgs = parseLines($form.find('[name="option_extra_args"]').val());
-        if (extraArgs.length) {
-          options.extraArgs = extraArgs;
         }
 
         return options;
@@ -544,17 +493,6 @@
         } catch (e) {
         }
         return null;
-      }
-
-      function buildDebugCallbacks($form) {
-        return {
-          can_use_tool: $form.find('[name="can_use_tool"]').val(),
-          can_use_tool_message: $form.find('[name="can_use_tool_message"]').val(),
-          can_use_tool_interrupt: $form.find('[name="can_use_tool_interrupt"]').is(':checked'),
-          hook_matchers: $form.find('[name="hook_matchers"]').val(),
-          hook_output: $form.find('[name="hook_output"]').val(),
-          mcp_response: $form.find('[name="mcp_response"]').val(),
-        };
       }
 
       function appendTerminalLine(text, type) {
@@ -608,19 +546,18 @@
         if (!activePermissionRequest) {
           return;
         }
-        if (!permissionDecisionUrl) {
-          appendTerminalLine('ERROR: Permission decision URL is not configured.', 'error');
+        if (!permissionResponseUrl) {
+          appendTerminalLine('ERROR: Permission response URL is not configured.', 'error');
           return;
         }
 
-        const requestId = String(activePermissionRequest.request_id || '');
-        fetch(permissionDecisionUrl, {
+        fetch(permissionResponseUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            request_id: requestId,
-            decision: decision,
-            runtime_id: runtimeId
+            queryId: activePermissionRequest.query_id,
+            requestId: activePermissionRequest.request_id,
+            behavior: decision
           }),
         }).then(function (response) {
           if (!response.ok) {
@@ -639,11 +576,11 @@
         });
       }
 
-      function extractAssistantText(message) {
-        if (!message || message.type !== 'assistant') {
+      function extractAssistantText(data) {
+        if (!data || data.type !== 'assistant') {
           return '';
         }
-        const content = message.message && message.message.content ? message.message.content : [];
+        const content = data.message && data.message.content ? data.message.content : [];
         if (!Array.isArray(content)) {
           return '';
         }
@@ -654,62 +591,6 @@
           }
         });
         return text;
-      }
-
-      function parseJsonl(raw) {
-        const lines = String(raw || '').split(/\r\n|\r|\n/);
-        const out = [];
-        lines.forEach(function (line) {
-          const trimmed = line.trim();
-          if (!trimmed) {
-            return;
-          }
-          try {
-            out.push(JSON.parse(trimmed));
-          } catch (e) {
-          }
-        });
-        return out;
-      }
-
-      function convertDeepChat(raw) {
-        let payload = null;
-        try {
-          payload = JSON.parse(raw);
-        } catch (e) {
-          return [];
-        }
-        if (!payload || !Array.isArray(payload.messages)) {
-          return [];
-        }
-        return payload.messages.map(function (msg) {
-          const message = {
-            type: msg.role || 'user',
-            message: { role: msg.role || 'user', content: msg.text || '' },
-            parent_tool_use_id: null,
-          };
-          if (debugMode !== 'client' && debugMode !== 'terminal') {
-            message.session_id = 'default';
-          }
-          return message;
-        });
-      }
-
-      function buildControl(action, mode, model, userMessageId) {
-        if (!action || action === 'none') {
-          return null;
-        }
-        const control = { action: action };
-        if (action === 'set_permission_mode') {
-          control.mode = mode || 'default';
-        }
-        if (action === 'set_model') {
-          control.model = model || null;
-        }
-        if (action === 'rewind_files') {
-          control.user_message_id = userMessageId || null;
-        }
-        return control;
       }
     }
   };

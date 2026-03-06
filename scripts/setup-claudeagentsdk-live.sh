@@ -47,12 +47,9 @@ cd "$DDEV_APPROOT" || exit 1
 
 MODULE_REMOTE="git@git.drupal.org:project/ai_claude_agent_sdk.git"
 MODULE_WORKTREE="$DDEV_APPROOT/modules/ai_claude_agent_sdk"
-LIB_WORKTREE="$DDEV_APPROOT/libraries/claude-agent-sdk-php"
 MODULE_CONTRIB="$DDEV_APPROOT/web/modules/contrib/ai_claude_agent_sdk"
 MODULE_CONTRIB_TARGET="../../../modules/ai_claude_agent_sdk"
 WORKSPACE_DIR="/var/www/html/claude_code_workspace"
-LIB_REMOTE="git@github.com:jamieaa64/claude-agent-sdk-php.git"
-
 ensure_checkout() {
   local path="$1"
   local remote="$2"
@@ -78,19 +75,14 @@ ensure_checkout() {
   git clone "$remote" "$path"
 }
 
-mkdir -p "$DDEV_APPROOT/modules" "$DDEV_APPROOT/libraries" "$DDEV_APPROOT/web/modules/contrib"
+mkdir -p "$DDEV_APPROOT/modules" "$DDEV_APPROOT/web/modules/contrib"
 ensure_checkout "$MODULE_WORKTREE" "$MODULE_REMOTE" "Module"
-ensure_checkout "$LIB_WORKTREE" "$LIB_REMOTE" "Library"
 
 echo "Linking module into contrib..."
 if [ -e "$MODULE_CONTRIB" ] && [ ! -L "$MODULE_CONTRIB" ]; then
   rm -rf "$MODULE_CONTRIB"
 fi
 ln -sfn "$MODULE_CONTRIB_TARGET" "$MODULE_CONTRIB"
-
-echo "Configuring Composer to use local library checkout..."
-ddev composer config repositories.claude-agent-sdk path ./libraries/claude-agent-sdk-php
-ddev composer require --no-interaction jamieaa64/claude-agent-sdk-php:dev-main
 
 echo "Ensuring Claude Code CLI is available in web container..."
 if ! ddev exec command -v claude >/dev/null 2>&1; then
@@ -111,6 +103,5 @@ ddev drush cr
 
 echo "Verifying remotes..."
 git -C "$MODULE_WORKTREE" remote -v
-git -C "$LIB_WORKTREE" remote -v
 
 echo "Claude Agent SDK live setup complete."

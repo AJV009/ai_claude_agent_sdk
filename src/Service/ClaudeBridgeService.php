@@ -264,6 +264,116 @@ final class ClaudeBridgeService {
   }
 
   /**
+   * Stream SSE chunks from the sidecar using raw SDK options (camelCase).
+   *
+   * Unlike stream(), this accepts options in SDK format directly rather than
+   * profile data. Used by the debug module which already builds SDK-format
+   * options.
+   *
+   * @param string $prompt
+   *   The user prompt.
+   * @param array $sdkOptions
+   *   SDK options in camelCase format (e.g. maxTurns, systemPrompt).
+   * @param callable $onChunk
+   *   Called with each raw SSE chunk.
+   */
+  public function streamDirect(string $prompt, array $sdkOptions, callable $onChunk): void {
+    $url = $this->getSidecarUrl() . '/api/query';
+
+    // Inject authentication env vars.
+    $authEnv = $this->authEnvResolver->buildEnv($sdkOptions['env'] ?? []);
+    if (!empty($authEnv)) {
+      $sdkOptions['env'] = $authEnv;
+    }
+
+    $payload = json_encode(array_filter([
+      'prompt' => $prompt,
+      'options' => $sdkOptions ?: NULL,
+    ], fn($v) => $v !== NULL && $v !== ''), JSON_THROW_ON_ERROR);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_POST => TRUE,
+      CURLOPT_POSTFIELDS => $payload,
+      CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: text/event-stream'],
+      CURLOPT_RETURNTRANSFER => FALSE,
+      CURLOPT_TIMEOUT => 0,
+      CURLOPT_CONNECTTIMEOUT => 10,
+      CURLOPT_WRITEFUNCTION => function ($ch, $data) use ($onChunk) {
+        $written = strlen($data);
+        $onChunk($data);
+        if (connection_aborted()) {
+          return 0;
+        }
+        return $written;
+      },
+    ]);
+
+    $result = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($result === FALSE && $errno !== 0) {
+      throw new \RuntimeException('Sidecar connection failed: ' . $error);
+    }
+  }
+
+  /**
+   * Collect the full response text using raw SDK options (camelCase).
+   *
+   * @param string $prompt
+   *   The user prompt.
+   * @param array $sdkOptions
+   *   SDK options in camelCase format.
+   *
+   * @return string
+   *   The accumulated response text.
+   */
+  public function collectResponseDirect(string $prompt, array $sdkOptions = []): string {
+    $resultText = '';
+    $buffer = '';
+
+    $this->streamDirect($prompt, $sdkOptions, function (string $data) use (&$resultText, &$buffer) {
+      $buffer .= $data;
+      while (($pos = strpos($buffer, "\n")) !== FALSE) {
+        $line = substr($buffer, 0, $pos);
+        $buffer = substr($buffer, $pos + 1);
+
+        if (!str_starts_with($line, 'data: ')) {
+          continue;
+        }
+        $payload = substr($line, 6);
+        if ($payload === '[DONE]') {
+          continue;
+        }
+        $decoded = json_decode($payload, TRUE);
+        if (!is_array($decoded)) {
+          continue;
+        }
+
+        $type = $decoded['type'] ?? '';
+        $subtype = $decoded['subtype'] ?? '';
+
+        if ($type === 'result' && $subtype === 'success' && isset($decoded['result'])) {
+          $resultText = $decoded['result'];
+        }
+
+        if ($type === 'result' && str_starts_with($subtype, 'error_')) {
+          $errors = $decoded['errors'] ?? [$subtype];
+          throw new \RuntimeException('Claude query error: ' . implode('; ', $errors));
+        }
+
+        if ($type === 'error' && isset($decoded['message'])) {
+          throw new \RuntimeException('Sidecar error: ' . $decoded['message']);
+        }
+      }
+    });
+
+    return trim($resultText);
+  }
+
+  /**
    * Get the sidecar base URL from configuration.
    */
   private function getSidecarUrl(): string {
