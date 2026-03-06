@@ -43,6 +43,42 @@ final class Plugin implements PluginInterface, EventSubscriberInterface {
    * {@inheritdoc}
    */
   public function uninstall(Composer $composer, IOInterface $io): void {
+    $projectRoot = getcwd();
+
+    if (!is_dir($projectRoot . '/.ddev')) {
+      return;
+    }
+
+    $removed = FALSE;
+    foreach (self::FILE_MAP as $dest => $source) {
+      $destPath = $projectRoot . '/' . $dest;
+
+      if (!file_exists($destPath)) {
+        continue;
+      }
+
+      // Only remove files that contain our module-specific marker,
+      // indicating they were scaffolded by this plugin and not customized.
+      $contents = file_get_contents($destPath);
+      if ($contents !== FALSE && str_contains($contents, '#ai-claude-agent-sdk-generated')) {
+        unlink($destPath);
+        $io->write('  <info>Removed scaffolded file: ' . $dest . '</info>');
+        $removed = TRUE;
+
+        // Remove parent directory if empty (e.g., .ddev/commands/web/).
+        $parentDir = dirname($destPath);
+        if (is_dir($parentDir) && count(scandir($parentDir)) === 2) {
+          rmdir($parentDir);
+        }
+      }
+      else {
+        $io->write('  <comment>Skipped ' . $dest . ' (customized, remove manually)</comment>');
+      }
+    }
+
+    if ($removed) {
+      $io->write('  <info>Claude sidecar DDEV config removed. Run <comment>ddev restart</comment> to apply.</info>');
+    }
   }
 
   /**

@@ -1,5 +1,6 @@
 #ddev-generated
-# Placed by drupal-scaffold from drupal/ai_claude_agent_sdk.
+#ai-claude-agent-sdk-generated
+# Placed by drupal/ai_claude_agent_sdk sidecar scaffold plugin.
 # Remove this file and add an entry to .ddev/.gitignore to prevent re-scaffolding.
 #
 # After scaffolding, run: ddev restart

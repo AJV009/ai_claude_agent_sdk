@@ -1,4 +1,6 @@
 #!/bin/bash
+#ddev-generated
+#ai-claude-agent-sdk-generated
 
 ## Description: Manage the Claude TUI sidecar
 ## Usage: claude-sidecar [status|health|logs|restart]
