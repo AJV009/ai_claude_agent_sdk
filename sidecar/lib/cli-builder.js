@@ -43,12 +43,28 @@ export function buildArgs(profile = {}, options = {}) {
     }
   }
 
-  if (profile.mcp_servers && Object.keys(profile.mcp_servers).length > 0) {
-    const mcpConfig = { mcpServers: profile.mcp_servers };
-    const tmpFile = path.join(os.tmpdir(), `claude-mcp-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
-    fs.writeFileSync(tmpFile, JSON.stringify(mcpConfig, null, 2));
-    args.push('--mcp-config', tmpFile);
-    cleanupFiles.push(tmpFile);
+  if (profile.mcp_servers && (Array.isArray(profile.mcp_servers) ? profile.mcp_servers.length > 0 : Object.keys(profile.mcp_servers).length > 0)) {
+    // Transform array format [{name, transport, url}] to CLI config format {name: {type, url}}.
+    let mcpServers;
+    if (Array.isArray(profile.mcp_servers)) {
+      mcpServers = {};
+      for (const server of profile.mcp_servers) {
+        if (server.name && server.url) {
+          mcpServers[server.name] = { type: server.transport || 'http', url: server.url };
+          if (server.headers) mcpServers[server.name].headers = server.headers;
+        }
+      }
+    } else {
+      mcpServers = profile.mcp_servers;
+    }
+
+    if (Object.keys(mcpServers).length > 0) {
+      const mcpConfig = { mcpServers };
+      const tmpFile = path.join(os.tmpdir(), `claude-mcp-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+      fs.writeFileSync(tmpFile, JSON.stringify(mcpConfig, null, 2));
+      args.push('--mcp-config', tmpFile);
+      cleanupFiles.push(tmpFile);
+    }
   }
 
   if (Array.isArray(profile.extra_args)) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\ai_claude_agent_sdk\Form;
 
+use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\key\KeyRepositoryInterface;
@@ -12,14 +13,17 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
 
   protected KeyRepositoryInterface $keyRepository;
+  protected ClaudeAgentSdkAuthEnvResolver $authEnvResolver;
 
-  public function __construct(KeyRepositoryInterface $keyRepository) {
+  public function __construct(KeyRepositoryInterface $keyRepository, ClaudeAgentSdkAuthEnvResolver $authEnvResolver) {
     $this->keyRepository = $keyRepository;
+    $this->authEnvResolver = $authEnvResolver;
   }
 
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('key.repository'),
+      $container->get('ai_claude_agent_sdk.auth_env_resolver'),
     );
   }
 
@@ -184,6 +188,53 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ->save();
 
     parent::submitForm($form, $form_state);
+
+    // Write the API key to ~/.claude/settings.json so the Claude Code
+    // interactive TUI can authenticate without manual onboarding.
+    $this->syncClaudeSettings();
+  }
+
+  /**
+   * Sync the resolved API key into ~/.claude/settings.json.
+   */
+  private function syncClaudeSettings(): void {
+    $home = getenv('HOME') ?: (getenv('DDEV_HOSTNAME') ? '/home/' . get_current_user() : '');
+    if ($home === '') {
+      return;
+    }
+
+    $dir = $home . '/.claude';
+    $file = $dir . '/settings.json';
+
+    $settings = [];
+    if (file_exists($file)) {
+      $json = file_get_contents($file);
+      if ($json !== FALSE) {
+        $decoded = json_decode($json, TRUE);
+        if (is_array($decoded)) {
+          $settings = $decoded;
+        }
+      }
+    }
+
+    $env = $this->authEnvResolver->buildEnv();
+    $apiKey = $env['ANTHROPIC_API_KEY'] ?? '';
+
+    if ($apiKey !== '') {
+      $settings['env']['ANTHROPIC_API_KEY'] = $apiKey;
+    }
+    else {
+      unset($settings['env']['ANTHROPIC_API_KEY']);
+    }
+
+    // Remove apiKeyHelper to avoid auth conflict with env var.
+    unset($settings['apiKeyHelper']);
+
+    if (!is_dir($dir)) {
+      @mkdir($dir, 0700, TRUE);
+    }
+
+    @file_put_contents($file, json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
   }
 
 }

@@ -180,7 +180,7 @@
       }
       var currentWs = wsGetter();
       if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-        currentWs.send('/' + cmd.name + '\n');
+        currentWs.send('/' + cmd.name + '\r');
       } else {
         promptInput.value = '/' + cmd.name;
       }
@@ -246,7 +246,8 @@
       while (sessionSelect.options.length > 1) {
         sessionSelect.remove(1);
       }
-      (Array.isArray(sessions) ? sessions : []).forEach(function (session) {
+      const list = Array.isArray(sessions) ? sessions : (sessions.sessions || []);
+      list.forEach(function (session) {
         const label = session.customTitle || session.summary || (session.firstPrompt ? session.firstPrompt.substring(0, 50) : null) || (session.sessionId ? session.sessionId.substring(0, 8) : 'unknown');
         const timeStr = session.lastModified ? timeAgo(session.lastModified) : '';
         const opt = document.createElement('option');
@@ -268,21 +269,32 @@
     const statusEl = document.getElementById('claude-terminal-status');
     const hashParams = readHash();
 
+    // Compute browser-facing sidecar base URL (DDEV exposes 3099/3100).
+    const browserApiBase = (function () {
+      if (settings.wsUrl) {
+        return settings.wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws\/?$/, '');
+      }
+      const isHttps = location.protocol === 'https:';
+      const protocol = isHttps ? 'https:' : 'http:';
+      const port = isHttps ? 3100 : 3099;
+      return protocol + '//' + location.hostname + ':' + port;
+    })();
+
     // Build toolbar controls.
     const { profileSelect, sessionSelect, promptInput, triggerBtn } = buildToolbar(settings);
 
     // Load sessions async.
-    loadSessions(settings.apiBase, sessionSelect, hashParams);
+    loadSessions(browserApiBase, sessionSelect, hashParams);
 
     // Reload sessions on dropdown focus.
     if (sessionSelect) {
       sessionSelect.addEventListener('focus', function () {
-        loadSessions(settings.apiBase, sessionSelect);
+        loadSessions(browserApiBase, sessionSelect);
       });
     }
 
     // Load and render slash command buttons.
-    const commands = await loadCommands(settings.apiBase);
+    const commands = await loadCommands(browserApiBase);
     if (commands.length > 0 && promptInput) {
       buildCommandRow(commands, promptInput, function () { return ws; }, function () { return connected; });
     }
@@ -336,6 +348,7 @@
     let reconnectDelay = 1000;
     let intentionalClose = false;
     let connected = false;
+    let pendingPrompt = null;
     const MAX_RECONNECT_DELAY = 16000;
 
     function updateStatus(state, text) {
@@ -372,10 +385,7 @@
       if (settings.wsUrl) {
         return settings.wsUrl;
       }
-      const isHttps = location.protocol === 'https:';
-      const protocol = isHttps ? 'wss:' : 'ws:';
-      const port = isHttps ? 3100 : 3099;
-      return protocol + '//' + location.hostname + ':' + port + '/ws';
+      return browserApiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
     }
 
     function connectAndSpawn(profileId, sessionId, promptText) {
@@ -410,6 +420,9 @@
         const profile = (profiles[profileId] && profiles[profileId].config) ? profiles[profileId].config : {};
 
         const spawnMsg = { type: 'spawn', profile: profile };
+        if (settings.env) {
+          spawnMsg.env = settings.env;
+        }
         if (sessionId) {
           spawnMsg.resume = sessionId;
         }
@@ -418,13 +431,9 @@
         // Send initial size.
         ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
 
-        // Send prompt text after a short delay to let the process start.
+        // Queue prompt text — it will be sent once the REPL prompt is detected.
         if (promptText) {
-          setTimeout(function () {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(promptText + '\n');
-            }
-          }, 500);
+          pendingPrompt = promptText;
         }
 
         // Clear input and update state.
@@ -458,6 +467,16 @@
         catch (e) {
           // Raw PTY data (non-JSON).
           term.write(data);
+          // Detect REPL prompt and send queued initial prompt.
+          if (pendingPrompt && (data.includes('\u276f') || data.includes('\u003e '))) {
+            const text = pendingPrompt;
+            pendingPrompt = null;
+            setTimeout(function () {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(text + '\r');
+              }
+            }, 100);
+          }
         }
       };
 
@@ -493,7 +512,7 @@
       }
       else if (promptText) {
         // Connected with text - send to PTY.
-        ws.send(promptText + '\n');
+        ws.send(promptText + '\r');
         promptInput.value = '';
         term.focus();
         updateTriggerButton();

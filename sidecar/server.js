@@ -200,7 +200,7 @@ wss.on('connection', (ws) => {
     }
   }
 
-  function spawnPty(profile = {}, resume = null, prompt = null) {
+  function spawnPty(profile = {}, resume = null, prompt = null, env = null) {
     if (ptyId) {
       sendJson({ type: 'error', message: 'PTY already spawned for this connection' });
       return;
@@ -212,6 +212,7 @@ wss.on('connection', (ws) => {
     const cwd = profile.working_directory || process.env.WORKING_DIR || '/var/www/html';
     const entry = ptyManager.spawn(connId, CLAUDE_COMMAND, args, {
       cwd,
+      env: env || undefined,
       sessionId: resume || null,
       onExit: (exitCode) => {
         for (const f of cleanupFiles) {
@@ -255,7 +256,7 @@ wss.on('connection', (ws) => {
 
       if (json.type === 'spawn') {
         clearTimeout(spawnTimeout);
-        spawnPty(json.profile || {}, json.resume || null, json.prompt || null);
+        spawnPty(json.profile || {}, json.resume || null, json.prompt || null, json.env || null);
         return;
       }
 

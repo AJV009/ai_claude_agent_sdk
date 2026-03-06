@@ -4,12 +4,27 @@ declare(strict_types=1);
 
 namespace Drupal\ai_claude_agent_sdk\Controller;
 
+use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\Core\Controller\ControllerBase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Controller for the Claude Terminal page.
  */
 class ClaudeTerminalController extends ControllerBase {
+
+  public function __construct(
+    private readonly ClaudeAgentSdkAuthEnvResolver $authEnvResolver,
+  ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    return new static(
+      $container->get('ai_claude_agent_sdk.auth_env_resolver'),
+    );
+  }
 
   /**
    * Renders the Claude Terminal page.
@@ -71,6 +86,7 @@ class ClaudeTerminalController extends ControllerBase {
             'apiBase' => $apiBase,
             'profiles' => $profiles,
             'defaultProfile' => $defaultProfile,
+            'env' => $this->authEnvResolver->buildEnv(),
           ],
         ],
       ],
