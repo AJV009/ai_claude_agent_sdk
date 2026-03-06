@@ -64,6 +64,32 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       'mode' => $mode,
     ];
 
+    $debugBaseUrl = Url::fromRoute('ai_claude_agent_sdk_debug.page')->toString();
+    $modes = [
+      'client' => $this->t('Client'),
+      'query' => $this->t('Query'),
+      'session_query' => $this->t('Session query'),
+      'terminal' => $this->t('Terminal'),
+    ];
+    $modeLinks = [];
+    foreach ($modes as $key => $label) {
+      $href = $key === 'client' ? $debugBaseUrl : $debugBaseUrl . '?mode=' . $key;
+      if ($key === $mode) {
+        $modeLinks[] = '<strong>' . $label . '</strong>';
+      }
+      else {
+        $modeLinks[] = '<a href="' . Html::escape($href) . '">' . $label . '</a>';
+      }
+    }
+    $processesUrl = Url::fromRoute('ai_claude_agent_sdk_debug.processes')->toString();
+    $modeLinks[] = '<a href="' . Html::escape($processesUrl) . '">Processes</a>';
+
+    $form['mode_nav'] = [
+      '#type' => 'markup',
+      '#markup' => '<nav class="claude-debug-mode-nav" style="margin-bottom:1em;font-size:0.95em;">' . implode(' &nbsp;|&nbsp; ', $modeLinks) . '</nav>',
+      '#weight' => -100,
+    ];
+
     $form['stream_endpoint'] = [
       '#type' => 'item',
       '#title' => $this->t('Streaming endpoint'),
@@ -72,12 +98,13 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       ]),
     ];
 
+    $terminalUrl = $debugBaseUrl . '?mode=terminal';
     if ($mode === 'query') {
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
-        '#markup' => $this->t('Single exchange (query). This page creates a new session for each request. For bridge tool-calling tests, use <a href=":terminal_url">Terminal (Client)</a>.', [
-          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
+        '#markup' => $this->t('Single exchange (query). This page creates a new session for each request. For bridge tool-calling tests, use <a href=":terminal_url">Terminal</a>.', [
+          ':terminal_url' => $terminalUrl,
         ]),
       ];
     }
@@ -85,8 +112,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       $form['mode_notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Mode'),
-        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support. For bridge tool-calling tests, use <a href=":terminal_url">Terminal (Client)</a>.', [
-          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
+        '#markup' => $this->t('Session exchange (query). Uses query mode with explicit session resume support. For bridge tool-calling tests, use <a href=":terminal_url">Terminal</a>.', [
+          ':terminal_url' => $terminalUrl,
         ]),
       ];
     }
@@ -719,8 +746,8 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
       ];
       $form['options_bridge_notice']['message'] = [
         '#type' => 'item',
-        '#markup' => $this->t('Bridge tool-calling is available in Client modes. Use <a href=":terminal_url">Terminal (Client)</a> for back-and-forth tool debugging.', [
-          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.terminal')->toString(),
+        '#markup' => $this->t('Bridge tool-calling is available in Client modes. Use <a href=":terminal_url">Terminal</a> for back-and-forth tool debugging.', [
+          ':terminal_url' => Url::fromRoute('ai_claude_agent_sdk_debug.page')->toString() . '?mode=terminal',
         ]),
       ];
       $form['options_bridge_notice']['option_bridge_mode'] = [

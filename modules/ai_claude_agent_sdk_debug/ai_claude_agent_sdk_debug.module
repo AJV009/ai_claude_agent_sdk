@@ -18,7 +18,7 @@ function ai_claude_agent_sdk_debug_page_attachments(array &$attachments): void {
     $attachments['#attached']['drupalSettings']['claudeAgentSdkDebug'] = [
       'streamUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.stream')->toString(),
       'permissionResponseUrl' => Url::fromRoute('ai_claude_agent_sdk_debug.permission_response')->toString(),
-      'mode' => $routeMatch->getParameter('mode') ?? 'client',
+      'mode' => \Drupal::request()->query->get('mode', 'client'),
     ];
   }
 }

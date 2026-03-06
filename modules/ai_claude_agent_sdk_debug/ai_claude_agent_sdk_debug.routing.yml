@@ -3,40 +3,6 @@ ai_claude_agent_sdk_debug.page:
   defaults:
     _title: 'Claude Agent SDK Debug'
     _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
-    mode: 'client'
-  requirements:
-    _permission: 'access claude agent sdk debug'
-  options:
-    _admin_route: TRUE
-
-ai_claude_agent_sdk_debug.query:
-  path: '/admin/config/ai/claude-agent-sdk/debug/query'
-  defaults:
-    _title: 'Claude Agent SDK Debug'
-    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
-    mode: 'query'
-  requirements:
-    _permission: 'access claude agent sdk debug'
-  options:
-    _admin_route: TRUE
-
-ai_claude_agent_sdk_debug.session_query:
-  path: '/admin/config/ai/claude-agent-sdk/debug/session-query'
-  defaults:
-    _title: 'Claude Agent SDK Debug'
-    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
-    mode: 'session_query'
-  requirements:
-    _permission: 'access claude agent sdk debug'
-  options:
-    _admin_route: TRUE
-
-ai_claude_agent_sdk_debug.terminal:
-  path: '/admin/config/ai/claude-agent-sdk/debug/terminal'
-  defaults:
-    _title: 'Claude Agent SDK Debug'
-    _controller: '\Drupal\ai_claude_agent_sdk_debug\Controller\ClaudeAgentSdkDebugController::page'
-    mode: 'terminal'
   requirements:
     _permission: 'access claude agent sdk debug'
   options:
