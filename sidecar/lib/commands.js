@@ -1,8 +1,6 @@
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const BUILTIN_COMMANDS = [
   { name: 'compact', description: 'Compact conversation history', hasArgs: false },
@@ -32,7 +30,7 @@ function scanDir(dir, category, commands) {
   }
 }
 
-function discoverCommands(workingDir) {
+export function discoverCommands(workingDir) {
   const commands = BUILTIN_COMMANDS.map(cmd => ({
     ...cmd,
     category: 'builtin',
@@ -43,5 +41,3 @@ function discoverCommands(workingDir) {
 
   return commands;
 }
-
-module.exports = { discoverCommands };

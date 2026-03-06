@@ -1,8 +1,6 @@
-'use strict';
+import { listSessions, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
 
-const { listSessions, getSessionMessages } = require('@anthropic-ai/claude-agent-sdk');
-
-async function getSessions(projectDir, limit = 50) {
+export async function getSessions(projectDir, limit = 50) {
   try {
     const sessions = await listSessions({ dir: projectDir, limit });
     return {
@@ -14,7 +12,7 @@ async function getSessions(projectDir, limit = 50) {
   }
 }
 
-async function getSession(sessionId, projectDir, messageLimit = 20) {
+export async function getSession(sessionId, projectDir, messageLimit = 20) {
   const { sessions } = await getSessions(projectDir, 999);
   const session = sessions.find(s => s.sessionId === sessionId);
   if (!session) return null;
@@ -30,7 +28,7 @@ async function getSession(sessionId, projectDir, messageLimit = 20) {
   }
 }
 
-function getActiveSessions(ptyManager) {
+export function getActiveSessions(ptyManager) {
   return ptyManager.list().map(p => ({
     connectionId: p.id,
     pid: p.pid,
@@ -39,5 +37,3 @@ function getActiveSessions(ptyManager) {
     command: p.command,
   }));
 }
-
-module.exports = { getSessions, getSession, getActiveSessions };

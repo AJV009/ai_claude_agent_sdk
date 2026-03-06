@@ -4,12 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\ai_claude_agent_sdk_console\Plugin\AiAgent;
 
-use Claude\AgentSdk\ClaudeAgentOptions;
-use Claude\AgentSdk\Client;
-use Claude\AgentSdk\Types\AssistantMessage;
-use Claude\AgentSdk\Types\ResultMessage;
-use Claude\AgentSdk\Types\TextBlock;
-use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
+use Drupal\ai_claude_agent_sdk\Service\ClaudeBridgeService;
 use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkProcessLimiter;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -30,9 +25,9 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
 
   use DependencySerializationTrait;
 
-  private ?ClaudeAgentSdkProcessLimiter $processLimiter = null;
+  private ?ClaudeAgentSdkProcessLimiter $processLimiter = NULL;
 
-  private ?ClaudeAgentSdkAuthEnvResolver $authEnvResolver = null;
+  private ?ClaudeBridgeService $bridge = NULL;
 
   /**
    * {@inheritDoc}
@@ -92,7 +87,7 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
   }
 
   /**
-   * Send a prompt via the Claude Agent SDK client (non-query helper).
+   * Send a prompt via the sidecar bridge service.
    */
   private function sendPrompt(): string {
     $this->agentHelper->setupRunner($this);
@@ -105,7 +100,8 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
     }
 
     $this->processLimiter ??= \Drupal::service('ai_claude_agent_sdk.process_limiter');
-    $this->authEnvResolver ??= \Drupal::service('ai_claude_agent_sdk.auth_env_resolver');
+    $this->bridge ??= \Drupal::service('ai_claude_agent_sdk.bridge');
+
     if ($this->processLimiter && !$this->processLimiter->canStart()) {
       $status = $this->processLimiter->getStatus();
       return (string) $this->t('Claude CLI limit reached (@running running, limit @limit). Try again later.', [
@@ -114,50 +110,21 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
       ]);
     }
 
-    $config = $this->config->get('ai_claude_agent_sdk.settings');
-    $cliPath = (string) ($config->get('cli_path') ?? '');
-    $model = (string) ($config->get('default_model') ?? '');
-    $cwd = (string) ($config->get('working_directory') ?? '');
-    $systemPrompt = '';
-
+    // Load the agent_profile entity for this agent.
+    $profileId = 'default';
     $agentEntity = $this->entityTypeManager->getStorage('ai_agent')->load($this->getId());
-    if ($agentEntity) {
-      $systemPrompt = (string) ($agentEntity->get('system_prompt') ?? '');
+    if ($agentEntity && $agentEntity->get('agent_profile')) {
+      $profileId = (string) $agentEntity->get('agent_profile');
     }
 
-    $options = new ClaudeAgentOptions(
-      cliPath: $cliPath !== '' ? $cliPath : null,
-      cwd: $cwd !== '' ? $cwd : null,
-      model: $model !== '' ? $model : null,
-      systemPrompt: $systemPrompt !== '' ? $systemPrompt : null,
-      env: $this->authEnvResolver?->buildEnv([]) ?? [],
-      hooks: [],
-    );
-
-    $client = new Client($options);
+    $profile = $this->entityTypeManager->getStorage('agent_profile')->load($profileId);
+    if (!$profile) {
+      return (string) $this->t('Agent profile %id not found.', ['%id' => $profileId]);
+    }
 
     try {
-      // Connect in streaming mode, but do not send any initial messages.
-      $client->connect(new \ArrayIterator([]));
+      $responseText = $this->bridge->collectResponse($profile->toSidecarFormat(), $prompt);
 
-      $client->query($prompt, $this->getRunnerId());
-
-      $responseText = '';
-      foreach ($client->receiveResponse() as $message) {
-        if ($message instanceof AssistantMessage) {
-          $responseText .= $this->renderAssistantMessage($message);
-        }
-        if ($message instanceof ResultMessage && $responseText === '') {
-          if (is_string($message->result)) {
-            $responseText = $message->result;
-          }
-        }
-      }
-
-      $client->closeInput();
-      $client->close();
-
-      $responseText = trim($responseText);
       if ($responseText === '') {
         return (string) $this->t('No response received from Claude Code.');
       }
@@ -165,31 +132,10 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
       return $responseText;
     }
     catch (Throwable $e) {
-      try {
-        $client->close();
-      }
-      catch (Throwable) {
-        // Ignore close failures.
-      }
-
       return (string) $this->t('Claude SDK error: @message', [
         '@message' => $e->getMessage(),
       ]);
     }
-  }
-
-  /**
-   * Render assistant message content to plain text.
-   */
-  private function renderAssistantMessage(AssistantMessage $message): string {
-    $text = '';
-    foreach ($message->content as $block) {
-      if ($block instanceof TextBlock) {
-        $text .= $block->text;
-      }
-    }
-
-    return $text;
   }
 
 }

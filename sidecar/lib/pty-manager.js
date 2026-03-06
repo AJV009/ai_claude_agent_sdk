@@ -1,8 +1,6 @@
-'use strict';
+import pty from 'node-pty';
 
-const pty = require('node-pty');
-
-class PtyManager {
+export class PtyManager {
   constructor(maxPtys = 5) {
     this.maxPtys = maxPtys;
     /** @type {Map<string, { id: string, pty: object, createdAt: Date, sessionId: string|null, command: string, onExit: function|null }>} */
@@ -111,5 +109,3 @@ class PtyManager {
     this.entries.clear();
   }
 }
-
-module.exports = { PtyManager };

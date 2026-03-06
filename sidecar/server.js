@@ -1,5 +1,3 @@
-'use strict';
-
 // Clean Claude Code session markers from our own process env so spawned
 // PTYs don't inherit them and trigger nested-session detection.
 delete process.env.CLAUDECODE;
@@ -9,14 +7,15 @@ for (const key of Object.keys(process.env)) {
   }
 }
 
-const http = require('http');
-const crypto = require('crypto');
-const fs = require('fs');
-const { WebSocketServer } = require('ws');
-const { PtyManager } = require('./lib/pty-manager');
-const { buildArgs } = require('./lib/cli-builder');
-const { getSessions, getSession, getActiveSessions } = require('./lib/sessions');
-const { discoverCommands } = require('./lib/commands');
+import http from 'http';
+import crypto from 'crypto';
+import fs from 'fs';
+import { WebSocketServer } from 'ws';
+import { PtyManager } from './lib/pty-manager.js';
+import { buildArgs } from './lib/cli-builder.js';
+import { getSessions, getSession, getActiveSessions } from './lib/sessions.js';
+import { discoverCommands } from './lib/commands.js';
+import { handleQuery } from './lib/query-handler.js';
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const CLAUDE_COMMAND = process.env.CLAUDE_COMMAND || 'claude';
@@ -27,6 +26,9 @@ const VERSION = '0.1.0';
 
 const ptyManager = new PtyManager(MAX_PTYS);
 
+// Shared counter for SDK query() calls (bounded together with PTYs by MAX_PTYS).
+const queryCounters = { queryCount: 0, maxConcurrent: MAX_PTYS };
+
 // --- HTTP server ---
 
 const server = http.createServer((req, res) => {
@@ -35,7 +37,7 @@ const server = http.createServer((req, res) => {
 
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   }
 
@@ -47,7 +49,7 @@ const server = http.createServer((req, res) => {
 
   if (req.url === '/health' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', activePTYs: ptyManager.getCount(), version: VERSION }));
+    res.end(JSON.stringify({ status: 'ok', activePTYs: ptyManager.getCount(), activeQueries: queryCounters.queryCount, version: VERSION }));
     return;
   }
 
@@ -91,6 +93,31 @@ const server = http.createServer((req, res) => {
       const isActive = active.some(a => a.sessionId === sessionId);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ...result, isActive }));
+    });
+    return;
+  }
+
+  if (pathname === '/api/query' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch (_) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+        return;
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+
+      handleQuery(req, res, parsed, queryCounters);
     });
     return;
   }

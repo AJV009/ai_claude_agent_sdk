@@ -46,6 +46,15 @@ ai_claude_agent_sdk.terminal:
   requirements:
     _permission: 'use claude terminal'
 
+ai_claude_agent_sdk.assistant_stream:
+  path: '/api/claude-assistant/stream'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeAssistantController::stream'
+  requirements:
+    _permission: 'use claude terminal'
+  options:
+    no_cache: TRUE
+
 ai_claude_agent_sdk.sessions:
   path: '/admin/ai/claude-sessions'
   defaults:

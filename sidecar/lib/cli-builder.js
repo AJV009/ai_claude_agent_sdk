@@ -1,8 +1,6 @@
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 /**
  * Translate an agent profile object to Claude CLI args.
@@ -13,7 +11,7 @@ const os = require('os');
  * @param {string} [options.prompt] - Initial prompt (added last).
  * @returns {{ args: string[], cleanupFiles: string[] }}
  */
-function buildArgs(profile = {}, options = {}) {
+export function buildArgs(profile = {}, options = {}) {
   const args = [];
   const cleanupFiles = [];
 
@@ -67,5 +65,3 @@ function buildArgs(profile = {}, options = {}) {
 
   return { args, cleanupFiles };
 }
-
-module.exports = { buildArgs };

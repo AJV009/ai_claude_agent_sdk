@@ -5,3 +5,6 @@ services:
   ai_claude_agent_sdk.auth_env_resolver:
     class: Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver
     arguments: ['@config.factory', '@key.repository']
+  ai_claude_agent_sdk.bridge:
+    class: Drupal\ai_claude_agent_sdk\Service\ClaudeBridgeService
+    arguments: ['@config.factory', '@ai_claude_agent_sdk.process_limiter', '@ai_claude_agent_sdk.auth_env_resolver']
