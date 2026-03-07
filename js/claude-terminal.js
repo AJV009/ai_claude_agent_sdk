@@ -145,66 +145,68 @@
     return { profileSelect, sessionSelect, promptInput, triggerBtn };
   }
 
-  async function loadCommands(apiBase) {
+  async function loadSkills(apiBase) {
     if (!apiBase) return [];
     try {
-      const resp = await fetch(apiBase + '/api/commands');
+      const resp = await fetch(apiBase + '/api/skills');
       if (!resp.ok) return [];
       const data = await resp.json();
-      return data.commands || [];
+      return data.skills || [];
     } catch (_) {
       return [];
     }
   }
 
-  function buildCommandRow(commands, promptInput, wsGetter, connectedGetter) {
-    var PRIMARY = ['commit', 'review', 'compact', 'plan', 'init'];
+  function buildSkillRow(skills, promptInput, wsGetter) {
+    // Filter to user-invocable skills only.
+    var invocable = skills.filter(function (s) { return s.userInvocable !== false; });
+    if (invocable.length === 0) return;
+
+    // Order: project-skill first, then user-skill.
+    invocable.sort(function (a, b) {
+      if (a.category === b.category) return 0;
+      return a.category === 'project-skill' ? -1 : 1;
+    });
+
     var row = document.createElement('div');
     row.id = 'claude-command-row';
 
-    var primaryCmds = [];
-    var otherCmds = [];
-    commands.forEach(function (cmd) {
-      if (PRIMARY.indexOf(cmd.name) !== -1 && cmd.category === 'builtin') {
-        primaryCmds.push(cmd);
-      } else {
-        otherCmds.push(cmd);
-      }
-    });
+    var MAX_BUTTONS = 6;
+    var buttonSkills = invocable.slice(0, MAX_BUTTONS);
+    var overflowSkills = invocable.slice(MAX_BUTTONS);
 
-    // Sort primary commands by PRIMARY order.
-    primaryCmds.sort(function (a, b) {
-      return PRIMARY.indexOf(a.name) - PRIMARY.indexOf(b.name);
-    });
-
-    function handleCommand(cmd) {
-      if (cmd.hasArgs) {
-        promptInput.value = '/' + cmd.name + ' ';
+    function handleSkill(skill) {
+      if (skill.hasArgs) {
+        promptInput.value = '/' + skill.name + ' ';
         promptInput.focus();
         return;
       }
       var currentWs = wsGetter();
       if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-        currentWs.send('/' + cmd.name + '\r');
+        currentWs.send('/' + skill.name + '\r');
       } else {
-        promptInput.value = '/' + cmd.name;
+        promptInput.value = '/' + skill.name;
       }
     }
 
-    primaryCmds.forEach(function (cmd) {
+    buttonSkills.forEach(function (skill) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'claude-cmd-btn';
-      btn.setAttribute('data-category', cmd.category);
-      btn.textContent = '/' + cmd.name;
-      btn.title = cmd.description;
+      btn.setAttribute('data-category', skill.category);
+      btn.textContent = '/' + skill.name;
+      var tooltip = skill.description || skill.name;
+      if (skill.argumentHint) {
+        tooltip = '/' + skill.name + ' ' + skill.argumentHint + ' - ' + tooltip;
+      }
+      btn.title = tooltip;
       btn.addEventListener('click', function () {
-        handleCommand(cmd);
+        handleSkill(skill);
       });
       row.appendChild(btn);
     });
 
-    if (otherCmds.length > 0) {
+    if (overflowSkills.length > 0) {
       var select = document.createElement('select');
       select.className = 'claude-cmd-more';
       var placeholder = document.createElement('option');
@@ -214,21 +216,21 @@
       placeholder.selected = true;
       select.appendChild(placeholder);
 
-      otherCmds.forEach(function (cmd) {
+      overflowSkills.forEach(function (skill) {
         var opt = document.createElement('option');
-        opt.value = cmd.name;
-        opt.textContent = '/' + cmd.name;
-        opt.title = cmd.description;
-        opt.setAttribute('data-category', cmd.category);
-        opt.setAttribute('data-has-args', cmd.hasArgs ? '1' : '0');
+        opt.value = skill.name;
+        opt.textContent = '/' + skill.name;
+        opt.title = skill.description;
+        opt.setAttribute('data-category', skill.category);
+        opt.setAttribute('data-has-args', skill.hasArgs ? '1' : '0');
         select.appendChild(opt);
       });
 
       select.addEventListener('change', function () {
         var name = select.value;
-        var cmd = otherCmds.find(function (c) { return c.name === name; });
-        if (cmd) {
-          handleCommand(cmd);
+        var skill = overflowSkills.find(function (s) { return s.name === name; });
+        if (skill) {
+          handleSkill(skill);
         }
         select.selectedIndex = 0;
       });
@@ -298,10 +300,10 @@
       });
     }
 
-    // Load and render slash command buttons.
-    const commands = await loadCommands(browserApiBase);
-    if (commands.length > 0 && promptInput) {
-      buildCommandRow(commands, promptInput, function () { return ws; }, function () { return connected; });
+    // Load and render skill buttons.
+    const skills = await loadSkills(browserApiBase);
+    if (skills.length > 0 && promptInput) {
+      buildSkillRow(skills, promptInput, function () { return ws; });
     }
 
     const { Terminal, FitAddon, WebglAddon } = await loadXtermModules();

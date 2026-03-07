@@ -19,6 +19,13 @@ ai_claude_agent_sdk.profiles:
   route_name: entity.agent_profile.collection
   weight: 5
 
+ai_claude_agent_sdk.skills:
+  title: 'Agent Skills'
+  description: 'Manage Claude agent skills.'
+  parent: ai_claude_agent_sdk.admin
+  route_name: entity.agent_skill.collection
+  weight: 7
+
 ai_claude_agent_sdk.sessions:
   title: 'Sessions'
   description: 'Browse Claude Code sessions.'

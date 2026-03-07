@@ -3,3 +3,15 @@ agent_profile.add:
   title: 'Add agent profile'
   appears_on:
     - entity.agent_profile.collection
+
+agent_skill.add:
+  route_name: entity.agent_skill.add_form
+  title: 'Add agent skill'
+  appears_on:
+    - entity.agent_skill.collection
+
+agent_skill.upload:
+  route_name: ai_claude_agent_sdk.skills_upload
+  title: 'Upload skill'
+  appears_on:
+    - entity.agent_skill.collection

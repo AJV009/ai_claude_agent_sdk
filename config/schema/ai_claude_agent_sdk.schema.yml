@@ -113,3 +113,44 @@ ai_claude_agent_sdk.agent_profile.*:
       sequence:
         type: string
         label: 'Argument'
+
+ai_claude_agent_sdk.agent_skill.*:
+  type: config_entity
+  label: 'Agent Skill'
+  mapping:
+    id:
+      type: string
+      label: 'Machine name'
+    label:
+      type: label
+      label: 'Label'
+    uuid:
+      type: string
+      label: 'UUID'
+    description:
+      type: string
+      label: 'Description'
+    skill_body:
+      type: text
+      label: 'SKILL.md body content'
+    disable_model_invocation:
+      type: boolean
+      label: 'Disable model invocation'
+    user_invocable:
+      type: boolean
+      label: 'User invocable'
+    argument_hint:
+      type: string
+      label: 'Argument hint'
+    allowed_tools:
+      type: sequence
+      label: 'Allowed tools'
+      sequence:
+        type: string
+        label: 'Tool name'
+    context_mode:
+      type: string
+      label: 'Context mode'
+    agent_type:
+      type: string
+      label: 'Subagent type'

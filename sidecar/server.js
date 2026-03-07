@@ -14,7 +14,7 @@ import { WebSocketServer } from 'ws';
 import { PtyManager } from './lib/pty-manager.js';
 import { buildArgs } from './lib/cli-builder.js';
 import { getSessions, getSession, getActiveSessions } from './lib/sessions.js';
-import { discoverCommands } from './lib/commands.js';
+import { discoverSkills } from './lib/skills.js';
 import { handleQuery } from './lib/query-handler.js';
 import { createPermissionManager } from './lib/permission-manager.js';
 
@@ -59,10 +59,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
-  if (pathname === '/api/commands' && req.method === 'GET') {
-    const commands = discoverCommands(WORKING_DIR);
+  if (pathname === '/api/skills' && req.method === 'GET') {
+    const skills = discoverSkills(WORKING_DIR);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ commands }));
+    res.end(JSON.stringify({ skills }));
     return;
   }
 

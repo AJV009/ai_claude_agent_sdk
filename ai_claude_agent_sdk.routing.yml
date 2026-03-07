@@ -75,6 +75,46 @@ ai_claude_agent_sdk.assistant_permission_response:
   options:
     no_cache: TRUE
 
+entity.agent_skill.collection:
+  path: '/admin/config/ai/claude-agent-sdk/skills'
+  defaults:
+    _title: 'Agent Skills'
+    _entity_list: 'agent_skill'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.agent_skill.add_form:
+  path: '/admin/config/ai/claude-agent-sdk/skills/add'
+  defaults:
+    _title: 'Add agent skill'
+    _entity_form: 'agent_skill.add'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.agent_skill.edit_form:
+  path: '/admin/config/ai/claude-agent-sdk/skills/{agent_skill}/edit'
+  defaults:
+    _title: 'Edit agent skill'
+    _entity_form: 'agent_skill.edit'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.agent_skill.delete_form:
+  path: '/admin/config/ai/claude-agent-sdk/skills/{agent_skill}/delete'
+  defaults:
+    _title: 'Delete agent skill'
+    _entity_form: 'agent_skill.delete'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+ai_claude_agent_sdk.skills_upload:
+  path: '/admin/config/ai/claude-agent-sdk/skills/upload'
+  defaults:
+    _title: 'Upload skill'
+    _form: '\Drupal\ai_claude_agent_sdk\Form\AgentSkillUploadForm'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
 ai_claude_agent_sdk.sessions:
   path: '/admin/config/ai/claude-agent-sdk/sessions'
   defaults:
