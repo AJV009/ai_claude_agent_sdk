@@ -1,0 +1,4 @@
+#ddev-generated
+#ai-claude-agent-sdk-generated
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp $(which claude 2>/dev/null || echo /root/.local/bin/claude) /usr/local/bin/claude

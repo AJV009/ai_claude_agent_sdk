@@ -25,6 +25,8 @@ final class Plugin implements PluginInterface, EventSubscriberInterface {
   private const FILE_MAP = [
     '.ddev/config.claude-sidecar.yaml' => 'ddev/config.claude-sidecar.yaml',
     '.ddev/commands/web/claude-sidecar' => 'ddev/commands/web/claude-sidecar',
+    '.ddev/web-build/Dockerfile.claude-code' => 'ddev/web-build/Dockerfile.claude-code',
+    '.ddev/commands/web/claude' => 'ddev/commands/web/claude',
   ];
 
   /**

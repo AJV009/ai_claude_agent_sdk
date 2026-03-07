@@ -1,0 +1,11 @@
+#!/bin/bash
+#ddev-generated
+#ai-claude-agent-sdk-generated
+
+## Description: Claude Code!
+## Usage: claude
+## Example: ddev claude [...]
+
+set -e
+
+claude $@
