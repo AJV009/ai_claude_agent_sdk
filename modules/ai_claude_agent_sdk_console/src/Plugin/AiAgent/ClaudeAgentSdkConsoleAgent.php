@@ -68,7 +68,6 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
    * {@inheritDoc}
    */
   public function determineSolvability() {
-    $this->agentHelper->setupRunner($this);
     return AiAgentInterface::JOB_SHOULD_ANSWER_QUESTION;
   }
 
@@ -90,8 +89,6 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
    * Send a prompt via the sidecar bridge service.
    */
   private function sendPrompt(): string {
-    $this->agentHelper->setupRunner($this);
-
     $task = $this->getTask();
     $prompt = $task ? trim($task->getDescription()) : '';
 
@@ -110,13 +107,8 @@ final class ClaudeAgentSdkConsoleAgent extends AiAgentBase {
       ]);
     }
 
-    // Load the agent_profile entity for this agent.
+    // Load the default agent profile.
     $profileId = 'default';
-    $agentEntity = $this->entityTypeManager->getStorage('ai_agent')->load($this->getId());
-    if ($agentEntity && $agentEntity->get('agent_profile')) {
-      $profileId = (string) $agentEntity->get('agent_profile');
-    }
-
     $profile = $this->entityTypeManager->getStorage('agent_profile')->load($profileId);
     if (!$profile) {
       return (string) $this->t('Agent profile %id not found.', ['%id' => $profileId]);
