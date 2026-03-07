@@ -147,6 +147,7 @@
               parts.forEach(function (part) {
                 if (part.indexOf('data: ') === 0) {
                   const json = part.slice(6);
+                  if (json === '[DONE]') { return; }
                   try {
                     const data = JSON.parse(json);
                     handleSseEvent(data, $output, null);
@@ -211,6 +212,7 @@
               parts.forEach(function (part) {
                 if (part.indexOf('data: ') === 0) {
                   const json = part.slice(6);
+                  if (json === '[DONE]') { return; }
                   try {
                     const data = JSON.parse(json);
                     appendRawEvent(json);
@@ -250,13 +252,6 @@
           }
         }
         if (data.type === 'result' && data.subtype === 'success') {
-          if (data.result) {
-            if (outputMode === 'terminal') {
-              appendTerminalLine(data.result, 'assistant');
-            } else if ($outputArea) {
-              $outputArea.val($outputArea.val() + data.result + "\n");
-            }
-          }
           if (data.session_id) {
             chatSessionId = data.session_id;
             $chatSession.text('Session: ' + chatSessionId);
