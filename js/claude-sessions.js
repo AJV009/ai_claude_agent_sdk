@@ -13,7 +13,16 @@
   };
 
   function initSessions(container) {
-    const { apiBase, terminalUrl } = drupalSettings.claudeSessions;
+    const { terminalUrl } = drupalSettings.claudeSessions;
+
+    // Compute browser-facing sidecar base URL (DDEV exposes 3099/3100).
+    const apiBase = (function () {
+      const isHttps = location.protocol === 'https:';
+      const protocol = isHttps ? 'https:' : 'http:';
+      const port = isHttps ? 3100 : 3099;
+      return protocol + '//' + location.hostname + ':' + port;
+    })();
+
     let allSessions = [];
     let displayCount = 10;
     const PAGE_SIZE = 10;
@@ -106,20 +115,20 @@
 
       var title = document.createElement('span');
       title.className = 'title';
-      title.textContent = s.name || s.sessionId || 'Untitled Session';
+      title.textContent = s.summary || s.name || s.sessionId || 'Untitled Session';
       cardHeader.appendChild(title);
 
       var time = document.createElement('span');
       time.className = 'time';
-      time.textContent = timeAgo(s.createdAt || s.updatedAt);
+      time.textContent = timeAgo(s.lastModified || s.createdAt || s.updatedAt);
       cardHeader.appendChild(time);
 
       card.appendChild(cardHeader);
 
       // Meta line.
       var metaParts = [];
-      if (s.branch) {
-        metaParts.push(esc(s.branch));
+      if (s.gitBranch || s.branch) {
+        metaParts.push(esc(s.gitBranch || s.branch));
       }
       if (s.fileSize) {
         metaParts.push(formatBytes(s.fileSize));
@@ -190,8 +199,10 @@
         }
         panel.innerHTML = '';
         messages.forEach(function (msg) {
+          // Unwrap: API returns { type, message: { role, content } }.
+          var inner = msg.message || msg;
           var msgEl = document.createElement('div');
-          var role = msg.role || 'unknown';
+          var role = inner.role || msg.type || 'unknown';
           msgEl.className = 'msg msg-' + esc(role);
 
           var roleSpan = document.createElement('span');
@@ -199,12 +210,13 @@
           roleSpan.textContent = role;
           msgEl.appendChild(roleSpan);
 
+          var rawContent = inner.content;
           var content = '';
-          if (typeof msg.content === 'string') {
-            content = msg.content;
+          if (typeof rawContent === 'string') {
+            content = rawContent;
           }
-          else if (Array.isArray(msg.content)) {
-            content = msg.content
+          else if (Array.isArray(rawContent)) {
+            content = rawContent
               .filter(function (b) { return b.type === 'text'; })
               .map(function (b) { return b.text; })
               .join('\n');

@@ -19,10 +19,6 @@ class ClaudeSessionsController extends ControllerBase {
    *   A render array.
    */
   public function page(): array {
-    $config = $this->config('ai_claude_agent_sdk.settings');
-    $sidecarUrl = $config->get('sidecar_url') ?: 'http://localhost:3000';
-    $apiBase = rtrim($sidecarUrl, '/');
-
     return [
       '#type' => 'container',
       '#attributes' => ['id' => 'claude-sessions-app'],
@@ -30,7 +26,6 @@ class ClaudeSessionsController extends ControllerBase {
         'library' => ['ai_claude_agent_sdk/sessions'],
         'drupalSettings' => [
           'claudeSessions' => [
-            'apiBase' => $apiBase,
             'terminalUrl' => Url::fromRoute('ai_claude_agent_sdk.terminal')->toString(),
           ],
         ],
