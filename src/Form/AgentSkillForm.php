@@ -36,9 +36,11 @@ class AgentSkillForm extends EntityForm {
       '#default_value' => $skill->id(),
       '#machine_name' => [
         'exists' => '\Drupal\ai_claude_agent_sdk\Entity\AgentSkill::load',
+        'replace_pattern' => '[^a-z0-9_-]+',
+        'replace' => '-',
       ],
       '#disabled' => !$skill->isNew(),
-      '#description' => $this->t('Lowercase letters, numbers, and underscores only. This becomes the skill directory name.'),
+      '#description' => $this->t('Lowercase letters, numbers, underscores, and hyphens. This becomes the skill directory name.'),
     ];
 
     $form['description'] = [

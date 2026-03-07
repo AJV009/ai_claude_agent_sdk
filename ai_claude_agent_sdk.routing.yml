@@ -115,6 +115,14 @@ ai_claude_agent_sdk.skills_upload:
   requirements:
     _permission: 'administer claude agent sdk'
 
+ai_claude_agent_sdk.skills_sync:
+  path: '/admin/config/ai/claude-agent-sdk/skills/sync'
+  defaults:
+    _title: 'Sync skills from filesystem'
+    _form: '\Drupal\ai_claude_agent_sdk\Form\AgentSkillSyncForm'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
 ai_claude_agent_sdk.sessions:
   path: '/admin/config/ai/claude-agent-sdk/sessions'
   defaults:

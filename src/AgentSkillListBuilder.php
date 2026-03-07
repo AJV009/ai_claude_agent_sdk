@@ -9,6 +9,7 @@ use Drupal\Core\Config\Entity\ConfigEntityListBuilder;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -42,7 +43,7 @@ final class AgentSkillListBuilder extends ConfigEntityListBuilder {
     $header['label'] = $this->t('Label');
     $header['id'] = $this->t('Machine name');
     $header['description'] = $this->t('Description');
-    $header['status'] = $this->t('Status');
+    $header['source'] = $this->t('Source');
     return $header + parent::buildHeader();
   }
 
@@ -55,7 +56,7 @@ final class AgentSkillListBuilder extends ConfigEntityListBuilder {
     $row['label'] = $entity->label();
     $row['id'] = $entity->id();
     $row['description'] = mb_strlen($description) > 80 ? mb_substr($description, 0, 80) . '...' : $description;
-    $row['status'] = $entity->status() ? $this->t('Enabled') : $this->t('Disabled');
+    $row['source'] = $this->t('Managed');
     return $row + parent::buildRow($entity);
   }
 
@@ -65,40 +66,45 @@ final class AgentSkillListBuilder extends ConfigEntityListBuilder {
   public function render(): array {
     $build = parent::render();
 
-    // Find filesystem skills not managed as config entities.
-    $filesystemSkills = $this->skillFileSync->discoverFilesystemSkills();
-    $entityIds = array_map(fn($entity) => $entity->id(), $this->load());
-    $unmanagedSkills = array_diff_key($filesystemSkills, array_flip($entityIds));
+    // Check for unmanaged project-scope skills.
+    $unmanagedSkills = $this->skillFileSync->getUnmanagedSkills();
+    if (!empty($unmanagedSkills)) {
+      $build['sync_banner'] = [
+        '#type' => 'container',
+        '#attributes' => ['class' => ['messages', 'messages--warning']],
+        '#weight' => -10,
+        'message' => [
+          '#markup' => $this->t('@count unmanaged skill(s) found on the filesystem.', [
+            '@count' => count($unmanagedSkills),
+          ]),
+        ],
+        'link' => [
+          '#type' => 'link',
+          '#title' => $this->t('Sync from filesystem'),
+          '#url' => new Url('ai_claude_agent_sdk.skills_sync'),
+          '#prefix' => ' ',
+        ],
+      ];
+    }
 
-    if ($unmanagedSkills) {
-      $rows = [];
-      foreach ($unmanagedSkills as $dirName => $skill) {
+    // Append user-scope skills as read-only rows.
+    $filesystemSkills = $this->skillFileSync->discoverFilesystemSkills();
+    $userSkills = array_filter(
+      $filesystemSkills,
+      fn(array $skill): bool => $skill['source'] === 'user',
+    );
+
+    if (!empty($userSkills)) {
+      foreach ($userSkills as $dirName => $skill) {
         $description = $skill['description'];
-        $rows[] = [
-          $skill['name'],
-          $dirName,
-          mb_strlen($description) > 80 ? mb_substr($description, 0, 80) . '...' : $description,
-          $skill['source'] === 'project' ? $this->t('Project') : $this->t('User'),
+        $build['table']['#rows'][] = [
+          'label' => $skill['name'],
+          'id' => $dirName,
+          'description' => mb_strlen($description) > 80 ? mb_substr($description, 0, 80) . '...' : $description,
+          'source' => $this->t('User'),
+          'operations' => '',
         ];
       }
-
-      $build['filesystem_skills'] = [
-        '#type' => 'details',
-        '#title' => $this->t('Discovered filesystem skills (@count)', ['@count' => count($unmanagedSkills)]),
-        '#open' => TRUE,
-        '#weight' => 50,
-        '#description' => $this->t('Skills found in <code>.claude/skills/</code> directories that are not managed through this admin UI. These are available to Claude Code directly.'),
-      ];
-      $build['filesystem_skills']['table'] = [
-        '#type' => 'table',
-        '#header' => [
-          $this->t('Name'),
-          $this->t('Directory'),
-          $this->t('Description'),
-          $this->t('Source'),
-        ],
-        '#rows' => $rows,
-      ];
     }
 
     return $build;

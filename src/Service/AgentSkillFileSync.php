@@ -6,6 +6,7 @@ namespace Drupal\ai_claude_agent_sdk\Service;
 
 use Drupal\ai_claude_agent_sdk\Entity\AgentSkillInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -18,6 +19,7 @@ class AgentSkillFileSync {
   public function __construct(
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly FileSystemInterface $fileSystem,
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
 
   /**
@@ -57,7 +59,7 @@ class AgentSkillFileSync {
   /**
    * Discovers skills from the filesystem that are not managed as config entities.
    *
-   * @return array<string, array{name: string, description: string, source: string}>
+   * @return array<string, array{name: string, description: string, source: string, content: string}>
    *   Keyed by skill directory name.
    */
   public function discoverFilesystemSkills(): array {
@@ -97,6 +99,7 @@ class AgentSkillFileSync {
           'name' => $parsed['name'] ?? $entry,
           'description' => $parsed['description'] ?? '',
           'source' => $source,
+          'content' => $content,
         ];
       }
     }
@@ -105,9 +108,110 @@ class AgentSkillFileSync {
   }
 
   /**
+   * Returns unmanaged project-scope filesystem skills.
+   *
+   * @return array<string, array{name: string, description: string, source: string, content: string}>
+   *   Only project-scope skills not already managed as config entities.
+   */
+  public function getUnmanagedSkills(): array {
+    $filesystemSkills = $this->discoverFilesystemSkills();
+    $entityIds = array_keys($this->entityTypeManager->getStorage('agent_skill')->loadMultiple());
+
+    return array_filter(
+      array_diff_key($filesystemSkills, array_flip($entityIds)),
+      fn(array $skill): bool => $skill['source'] === 'project',
+    );
+  }
+
+  /**
+   * Syncs all unmanaged project-scope filesystem skills into config entities.
+   *
+   * @return array{created: string[], skipped: string[]}
+   */
+  public function syncAllFromFilesystem(): array {
+    $result = ['created' => [], 'skipped' => []];
+    $unmanagedSkills = $this->getUnmanagedSkills();
+
+    foreach ($unmanagedSkills as $dirName => $skill) {
+      $entity = $this->createEntityFromContent($skill['content'], $dirName, $dirName);
+      if ($entity) {
+        $result['created'][] = $dirName;
+      }
+      else {
+        $result['skipped'][] = $dirName;
+      }
+    }
+
+    return $result;
+  }
+
+  /**
+   * Parse SKILL.md content and create an AgentSkill entity.
+   *
+   * @param string $content
+   *   The raw SKILL.md file content.
+   * @param string $fallbackName
+   *   Fallback name if frontmatter has no name key.
+   * @param string|null $forceId
+   *   If provided, use this as the entity ID directly (for sync).
+   *
+   * @return \Drupal\ai_claude_agent_sdk\Entity\AgentSkillInterface|null
+   *   The created entity, or NULL if it already exists.
+   */
+  public function createEntityFromContent(string $content, string $fallbackName = '', ?string $forceId = NULL): ?AgentSkillInterface {
+    $meta = [];
+    $body = $content;
+
+    if (preg_match('/^---\r?\n(.*?)\r?\n---\r?\n?(.*)/s', $content, $matches)) {
+      try {
+        $meta = Yaml::parse($matches[1]) ?: [];
+      }
+      catch (\Exception $e) {
+        // Malformed frontmatter — use full content as body.
+      }
+      $body = $matches[2];
+    }
+
+    if ($forceId !== NULL) {
+      $id = $forceId;
+    }
+    else {
+      $name = $meta['name'] ?? $fallbackName ?: 'imported-skill-' . substr(uniqid(), -6);
+      $id = preg_replace('/[^a-z0-9_-]+/', '-', strtolower($name));
+      $id = trim($id, '-');
+    }
+
+    $storage = $this->entityTypeManager->getStorage('agent_skill');
+
+    if ($storage->load($id)) {
+      return NULL;
+    }
+
+    $name = $meta['name'] ?? $fallbackName ?: $id;
+
+    $values = [
+      'id' => $id,
+      'label' => $meta['name'] ?? ucwords(str_replace(['-', '_'], ' ', $name)),
+      'description' => $meta['description'] ?? '',
+      'skill_body' => trim($body),
+      'disable_model_invocation' => !empty($meta['disable-model-invocation']),
+      'user_invocable' => $meta['user-invocable'] ?? TRUE,
+      'argument_hint' => $meta['argument-hint'] ?? '',
+      'allowed_tools' => $meta['allowed-tools'] ?? [],
+      'context_mode' => $meta['context-mode'] ?? 'inline',
+      'agent_type' => $meta['agent-type'] ?? '',
+    ];
+
+    $entity = $storage->create($values);
+    $entity->save();
+
+    return $entity;
+  }
+
+  /**
    * Parses YAML frontmatter from SKILL.md content.
    */
-  protected function parseFrontmatter(string $content): array {
+  public function parseFrontmatter(string $content): array {
     if (!preg_match('/\A---\r?\n(.+?)\r?\n---/s', $content, $matches)) {
       return [];
     }

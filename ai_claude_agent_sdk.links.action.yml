@@ -15,3 +15,9 @@ agent_skill.upload:
   title: 'Upload skill'
   appears_on:
     - entity.agent_skill.collection
+
+agent_skill.sync:
+  route_name: ai_claude_agent_sdk.skills_sync
+  title: 'Sync from filesystem'
+  appears_on:
+    - entity.agent_skill.collection

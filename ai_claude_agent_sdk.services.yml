@@ -10,7 +10,7 @@ services:
     arguments: ['@config.factory', '@ai_claude_agent_sdk.process_limiter', '@ai_claude_agent_sdk.auth_env_resolver']
   ai_claude_agent_sdk.skill_file_sync:
     class: Drupal\ai_claude_agent_sdk\Service\AgentSkillFileSync
-    arguments: ['@config.factory', '@file_system']
+    arguments: ['@config.factory', '@file_system', '@entity_type.manager']
   ai_claude_agent_sdk.execution_envelope:
     class: Drupal\ai_claude_agent_sdk\Service\ExecutionEnvelopeService
     arguments: ['@tempstore.shared', '@current_user', '@uuid']
