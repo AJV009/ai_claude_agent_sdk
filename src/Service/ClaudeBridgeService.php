@@ -330,11 +330,11 @@ final class ClaudeBridgeService {
    * @return string
    *   The accumulated response text.
    */
-  public function collectResponseDirect(string $prompt, array $sdkOptions = []): string {
+  public function collectResponseDirect(string $prompt, array $sdkOptions = [], array &$metadata = []): string {
     $resultText = '';
     $buffer = '';
 
-    $this->streamDirect($prompt, $sdkOptions, function (string $data) use (&$resultText, &$buffer) {
+    $this->streamDirect($prompt, $sdkOptions, function (string $data) use (&$resultText, &$buffer, &$metadata) {
       $buffer .= $data;
       while (($pos = strpos($buffer, "\n")) !== FALSE) {
         $line = substr($buffer, 0, $pos);
@@ -354,6 +354,10 @@ final class ClaudeBridgeService {
 
         $type = $decoded['type'] ?? '';
         $subtype = $decoded['subtype'] ?? '';
+
+        if (isset($decoded['session_id']) && is_string($decoded['session_id']) && $decoded['session_id'] !== '') {
+          $metadata['session_id'] = $decoded['session_id'];
+        }
 
         if ($type === 'result' && $subtype === 'success' && isset($decoded['result'])) {
           $resultText = $decoded['result'];

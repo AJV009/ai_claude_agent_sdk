@@ -226,7 +226,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
     }
 
     $parents = $triggeringElement['#parents'] ?? [];
-    return $parents === ['actions', 'submit'] || $name === 'submit';
+    return $parents === ['actions', 'submit'] || $parents === ['submit'] || $name === 'op' || $name === 'submit';
   }
 
   public function submitForm(array &$form, FormStateInterface $form_state): void {
@@ -325,8 +325,12 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
 
     try {
       $this->lastSessionId = null;
+      $metadata = [];
 
-      $output = $this->bridge->collectResponseDirect($promptRaw, $cleanOptions);
+      $output = $this->bridge->collectResponseDirect($promptRaw, $cleanOptions, $metadata);
+      if (isset($metadata['session_id']) && is_string($metadata['session_id'])) {
+        $this->lastSessionId = $metadata['session_id'];
+      }
 
       if ($mode === 'session_query' && is_string($requestedResume) && $requestedResume !== '' && is_string($this->lastSessionId) && $this->lastSessionId !== '' && $this->lastSessionId !== $requestedResume) {
         throw new \RuntimeException(sprintf('Resume session mismatch: requested %s but Claude returned %s. Response rejected.', $requestedResume, $this->lastSessionId));
