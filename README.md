@@ -1,3 +1,9 @@
+> **Note:** This is a development fork. The original Drupal module lives at
+> [drupal.org/project/ai_claude_agent_sdk](https://www.drupal.org/project/ai_claude_agent_sdk)
+> (source: `https://git.drupalcode.org/project/ai_claude_agent_sdk.git`).
+
+---
+
 # AI Claude Agent SDK
 
 ## Build Process Documentation
