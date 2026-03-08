@@ -153,6 +153,38 @@ ai_claude_agent_sdk.session_messages:
   options:
     no_cache: TRUE
 
+entity.scheduled_task.collection:
+  path: '/admin/config/ai/claude-agent-sdk/scheduled-tasks'
+  defaults:
+    _title: 'Scheduled Tasks'
+    _entity_list: 'scheduled_task'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.scheduled_task.add_form:
+  path: '/admin/config/ai/claude-agent-sdk/scheduled-tasks/add'
+  defaults:
+    _title: 'Add scheduled task'
+    _entity_form: 'scheduled_task.add'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.scheduled_task.edit_form:
+  path: '/admin/config/ai/claude-agent-sdk/scheduled-tasks/{scheduled_task}/edit'
+  defaults:
+    _title: 'Edit scheduled task'
+    _entity_form: 'scheduled_task.edit'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+entity.scheduled_task.delete_form:
+  path: '/admin/config/ai/claude-agent-sdk/scheduled-tasks/{scheduled_task}/delete'
+  defaults:
+    _title: 'Delete scheduled task'
+    _entity_form: 'scheduled_task.delete'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
 ai_claude_agent_sdk.query_abort:
   path: '/admin/config/ai/claude-agent-sdk/queries/{query_id}/abort'
   defaults:

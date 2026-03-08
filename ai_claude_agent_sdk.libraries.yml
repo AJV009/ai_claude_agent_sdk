@@ -8,6 +8,13 @@ terminal:
     - core/drupalSettings
     - core/once
 
+scheduled-task:
+  js:
+    js/skill-schedule.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+
 sessions:
   css:
     theme:

@@ -26,6 +26,13 @@ ai_claude_agent_sdk.skills:
   route_name: entity.agent_skill.collection
   weight: 7
 
+ai_claude_agent_sdk.scheduled_tasks:
+  title: 'Scheduled Tasks'
+  description: 'Manage scheduled skill and prompt executions.'
+  parent: ai_claude_agent_sdk.admin
+  route_name: entity.scheduled_task.collection
+  weight: 8
+
 ai_claude_agent_sdk.sessions:
   title: 'Sessions'
   description: 'Browse Claude Code sessions.'

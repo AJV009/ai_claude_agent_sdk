@@ -11,6 +11,9 @@ services:
   ai_claude_agent_sdk.skill_file_sync:
     class: Drupal\ai_claude_agent_sdk\Service\AgentSkillFileSync
     arguments: ['@config.factory', '@file_system', '@entity_type.manager']
+  ai_claude_agent_sdk.scheduler:
+    class: Drupal\ai_claude_agent_sdk\Service\AgentSkillScheduler
+    arguments: ['@entity_type.manager', '@state', '@queue', '@ai_claude_agent_sdk.bridge', '@datetime.time']
   ai_claude_agent_sdk.execution_envelope:
     class: Drupal\ai_claude_agent_sdk\Service\ExecutionEnvelopeService
     arguments: ['@tempstore.shared', '@current_user', '@uuid']

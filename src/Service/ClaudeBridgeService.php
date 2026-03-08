@@ -401,6 +401,9 @@ final class ClaudeBridgeService {
     if (!empty($metadata['initiatorUid'])) {
       $payload['initiatorUid'] = $metadata['initiatorUid'];
     }
+    if (!empty($metadata['taskId'])) {
+      $payload['taskId'] = $metadata['taskId'];
+    }
 
     $url = $this->getSidecarUrl() . '/api/query';
     $encoded = json_encode($payload, JSON_THROW_ON_ERROR);
@@ -506,7 +509,8 @@ final class ClaudeBridgeService {
    *   Decoded JSON response with queries.
    */
   public function fetchQueries(): array {
-    return $this->sidecarGet('/api/queries');
+    $response = $this->sidecarGet('/api/queries');
+    return $response['queries'] ?? [];
   }
 
   /**

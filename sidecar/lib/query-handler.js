@@ -112,6 +112,7 @@ export async function handleQuery(req, res, body, counters, permissionManager, q
     const metadata = {
       skillId: body.skillId || null,
       initiatorUid: body.initiatorUid || null,
+      taskId: body.taskId || null,
     };
     queryRegistry.register(queryId, abortController, metadata);
 

@@ -10,6 +10,12 @@ agent_skill.add:
   appears_on:
     - entity.agent_skill.collection
 
+scheduled_task.add:
+  route_name: entity.scheduled_task.add_form
+  title: 'Add scheduled task'
+  appears_on:
+    - entity.scheduled_task.collection
+
 agent_skill.upload:
   route_name: ai_claude_agent_sdk.skills_upload
   title: 'Upload skill'

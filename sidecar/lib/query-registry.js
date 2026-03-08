@@ -20,6 +20,7 @@ export function createQueryRegistry() {
       error: null,
       skillId: metadata.skillId || null,
       initiatorUid: metadata.initiatorUid || null,
+      taskId: metadata.taskId || null,
     });
   }
 

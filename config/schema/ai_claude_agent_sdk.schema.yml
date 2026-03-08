@@ -114,6 +114,47 @@ ai_claude_agent_sdk.agent_profile.*:
         type: string
         label: 'Argument'
 
+ai_claude_agent_sdk.scheduled_task.*:
+  type: config_entity
+  label: 'Scheduled Task'
+  mapping:
+    id:
+      type: string
+      label: 'Machine name'
+    label:
+      type: label
+      label: 'Label'
+    uuid:
+      type: string
+      label: 'UUID'
+    status:
+      type: boolean
+      label: 'Enabled'
+    source_type:
+      type: string
+      label: 'Source type'
+    skill_id:
+      type: string
+      label: 'Skill ID'
+    prompt:
+      type: text
+      label: 'Custom prompt'
+    arguments:
+      type: string
+      label: 'Arguments'
+    profile_id:
+      type: string
+      label: 'Profile ID'
+    schedule_date:
+      type: string
+      label: 'Schedule date/time'
+    schedule_type:
+      type: string
+      label: 'Schedule repeat type'
+    schedule_custom_interval:
+      type: integer
+      label: 'Custom interval (seconds)'
+
 ai_claude_agent_sdk.agent_skill.*:
   type: config_entity
   label: 'Agent Skill'
