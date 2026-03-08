@@ -63,6 +63,19 @@ final class AgentSkillListBuilder extends ConfigEntityListBuilder {
   /**
    * {@inheritdoc}
    */
+  public function getDefaultOperations(EntityInterface $entity): array {
+    $operations = parent::getDefaultOperations($entity);
+    $operations['run'] = [
+      'title' => $this->t('Run'),
+      'url' => Url::fromRoute('ai_claude_agent_sdk.skill_run', ['agent_skill' => $entity->id()]),
+      'weight' => 50,
+    ];
+    return $operations;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function render(): array {
     $build = parent::render();
 

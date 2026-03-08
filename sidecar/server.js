@@ -17,6 +17,7 @@ import { getSessions, getSession, getActiveSessions } from './lib/sessions.js';
 import { discoverSkills } from './lib/skills.js';
 import { handleQuery } from './lib/query-handler.js';
 import { createPermissionManager } from './lib/permission-manager.js';
+import { createQueryRegistry } from './lib/query-registry.js';
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const CLAUDE_COMMAND = process.env.CLAUDE_COMMAND || 'claude';
@@ -31,6 +32,7 @@ const ptyManager = new PtyManager(MAX_PTYS);
 const queryCounters = { queryCount: 0, maxConcurrent: MAX_PTYS };
 
 const permissionManager = createPermissionManager();
+const queryRegistry = createQueryRegistry();
 
 // --- HTTP server ---
 
@@ -78,8 +80,19 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/sessions/active' && req.method === 'GET') {
     const active = getActiveSessions(ptyManager);
+    // Merge running background queries into the active list.
+    const bgQueries = queryRegistry.list()
+      .filter(q => q.status === 'running')
+      .map(q => ({
+        sessionId: q.sessionId || q.queryId,
+        queryId: q.queryId,
+        type: 'background_query',
+        status: q.status,
+        startedAt: q.startedAt,
+        skillId: q.skillId,
+      }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ active }));
+    res.end(JSON.stringify({ active: [...bgQueries, ...active] }));
     return;
   }
 
@@ -126,7 +139,7 @@ const server = http.createServer((req, res) => {
         'X-Accel-Buffering': 'no',
       });
 
-      handleQuery(req, res, parsed, queryCounters, permissionManager);
+      handleQuery(req, res, parsed, queryCounters, permissionManager, queryRegistry);
     });
     return;
   }
@@ -172,6 +185,27 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: 'Permission request not found or already resolved' }));
       }
     });
+    return;
+  }
+
+  if (pathname === '/api/queries' && req.method === 'GET') {
+    const queries = queryRegistry.list();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ queries }));
+    return;
+  }
+
+  const abortMatch = pathname.match(/^\/api\/queries\/([^/]+)\/abort$/);
+  if (abortMatch && req.method === 'POST') {
+    const queryId = abortMatch[1];
+    const aborted = queryRegistry.abort(queryId);
+    if (aborted) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Query not found or not running' }));
+    }
     return;
   }
 

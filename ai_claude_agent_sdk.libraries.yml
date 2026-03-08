@@ -12,8 +12,3 @@ sessions:
   css:
     theme:
       css/claude-sessions.css: {}
-  js:
-    js/claude-sessions.js: { attributes: { type: module } }
-  dependencies:
-    - core/drupalSettings
-    - core/once

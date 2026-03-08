@@ -10,8 +10,9 @@ import { mapProfileToOptions } from './profile-mapper.js';
  * @param {object} body - Parsed request body.
  * @param {object} counters - { queryCount, maxConcurrent } shared state.
  * @param {object} permissionManager - Permission manager instance.
+ * @param {object} queryRegistry - Background query registry instance.
  */
-export async function handleQuery(req, res, body, counters, permissionManager) {
+export async function handleQuery(req, res, body, counters, permissionManager, queryRegistry) {
   const { prompt, options: requestOptions = {} } = body;
 
   if (!prompt && !requestOptions.resume) {
@@ -27,12 +28,15 @@ export async function handleQuery(req, res, body, counters, permissionManager) {
   counters.queryCount++;
 
   const queryId = crypto.randomUUID();
+  const isBackground = body.background === true;
 
   const abortController = new AbortController();
-  res.on('close', () => {
-    abortController.abort();
-    permissionManager.cleanup(queryId);
-  });
+  if (!isBackground) {
+    res.on('close', () => {
+      abortController.abort();
+      permissionManager.cleanup(queryId);
+    });
+  }
 
   // Build SDK options from profile fields passed through options.
   const profileOptions = mapProfileToOptions(requestOptions);
@@ -100,6 +104,68 @@ export async function handleQuery(req, res, body, counters, permissionManager) {
       }
       return promise;
     };
+  }
+
+  // Background mode: register, send queryId, then run detached.
+  if (isBackground) {
+    sdkOptions.permissionMode = 'plan';
+    const metadata = {
+      skillId: body.skillId || null,
+      initiatorUid: body.initiatorUid || null,
+    };
+    queryRegistry.register(queryId, abortController, metadata);
+
+    res.write(`data: ${JSON.stringify({ type: 'query_start', queryId })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+    // Run query in detached async IIFE.
+    (async () => {
+      try {
+        const conversation = query({
+          prompt: prompt || '',
+          options: sdkOptions,
+        });
+
+        for await (const message of conversation) {
+          // Capture session_id from messages.
+          if (message.session_id) {
+            queryRegistry.update(queryId, { sessionId: message.session_id });
+          }
+          // Capture result.
+          if (message.type === 'result' && message.subtype === 'success') {
+            queryRegistry.update(queryId, { result: message.result || '' });
+          }
+        }
+        queryRegistry.update(queryId, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        const isAbort = err.name === 'AbortError'
+          || (err.message && err.message.includes('aborted'));
+        // Don't overwrite if registry.abort() already set status.
+        const current = queryRegistry.get(queryId);
+        if (current && current.status === 'aborted') {
+          // Already marked aborted by registry.abort() — no-op.
+        } else if (isAbort) {
+          queryRegistry.update(queryId, {
+            status: 'aborted',
+            completedAt: new Date().toISOString(),
+          });
+        } else {
+          queryRegistry.update(queryId, {
+            status: 'error',
+            error: err.message,
+            completedAt: new Date().toISOString(),
+          });
+        }
+      } finally {
+        counters.queryCount--;
+      }
+    })();
+
+    return;
   }
 
   try {

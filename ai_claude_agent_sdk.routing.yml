@@ -123,10 +123,40 @@ ai_claude_agent_sdk.skills_sync:
   requirements:
     _permission: 'administer claude agent sdk'
 
+ai_claude_agent_sdk.skill_run:
+  path: '/admin/config/ai/claude-agent-sdk/skills/{agent_skill}/run'
+  defaults:
+    _form: '\Drupal\ai_claude_agent_sdk\Form\AgentSkillRunForm'
+    _title: 'Run Skill'
+  requirements:
+    _permission: 'use claude terminal'
+  options:
+    parameters:
+      agent_skill:
+        type: entity:agent_skill
+
 ai_claude_agent_sdk.sessions:
   path: '/admin/config/ai/claude-agent-sdk/sessions'
   defaults:
     _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeSessionsController::page'
     _title: 'Claude Sessions'
+  requirements:
+    _permission: 'use claude terminal'
+
+ai_claude_agent_sdk.session_messages:
+  path: '/admin/config/ai/claude-agent-sdk/sessions/{session_id}/messages'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudeSessionsController::messages'
+    _title: 'Session Messages'
+  requirements:
+    _permission: 'use claude terminal'
+  options:
+    no_cache: TRUE
+
+ai_claude_agent_sdk.query_abort:
+  path: '/admin/config/ai/claude-agent-sdk/queries/{query_id}/abort'
+  defaults:
+    _form: '\Drupal\ai_claude_agent_sdk\Form\QueryAbortConfirmForm'
+    _title: 'Interrupt Query'
   requirements:
     _permission: 'use claude terminal'

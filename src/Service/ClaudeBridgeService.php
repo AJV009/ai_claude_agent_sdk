@@ -378,6 +378,201 @@ final class ClaudeBridgeService {
   }
 
   /**
+   * Fire-and-forget a background query to the sidecar.
+   *
+   * @param array $profile
+   *   Profile data from AgentProfile::toSidecarFormat().
+   * @param string $prompt
+   *   The user prompt.
+   * @param array $mcpHeaders
+   *   Optional headers to inject into MCP server configs.
+   * @param array $metadata
+   *   Optional metadata (skillId, initiatorUid) passed to sidecar.
+   *
+   * @return string
+   *   The queryId assigned by the sidecar.
+   */
+  public function fireAndForget(array $profile, string $prompt, array $mcpHeaders = [], array $metadata = []): string {
+    $payload = $this->buildRequestPayload($profile, $prompt, NULL, $mcpHeaders);
+    $payload['background'] = TRUE;
+    if (!empty($metadata['skillId'])) {
+      $payload['skillId'] = $metadata['skillId'];
+    }
+    if (!empty($metadata['initiatorUid'])) {
+      $payload['initiatorUid'] = $metadata['initiatorUid'];
+    }
+
+    $url = $this->getSidecarUrl() . '/api/query';
+    $encoded = json_encode($payload, JSON_THROW_ON_ERROR);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_POST => TRUE,
+      CURLOPT_POSTFIELDS => $encoded,
+      CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: text/event-stream'],
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_CONNECTTIMEOUT => 10,
+      CURLOPT_TIMEOUT => 15,
+    ]);
+
+    $result = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($result === FALSE && $errno !== 0) {
+      throw new \RuntimeException('Sidecar connection failed: ' . $error);
+    }
+
+    // Parse SSE response to extract queryId from query_start event.
+    $queryId = '';
+    $lines = explode("\n", (string) $result);
+    foreach ($lines as $line) {
+      if (!str_starts_with($line, 'data: ')) {
+        continue;
+      }
+      $data = substr($line, 6);
+      if ($data === '[DONE]') {
+        continue;
+      }
+      $decoded = json_decode($data, TRUE);
+      if (is_array($decoded) && ($decoded['type'] ?? '') === 'query_start' && !empty($decoded['queryId'])) {
+        $queryId = $decoded['queryId'];
+        break;
+      }
+    }
+
+    if ($queryId === '') {
+      throw new \RuntimeException('Failed to get queryId from sidecar background query');
+    }
+
+    return $queryId;
+  }
+
+  /**
+   * Abort a running background query.
+   *
+   * @param string $queryId
+   *   The query ID to abort.
+   *
+   * @return bool
+   *   TRUE if the query was aborted successfully.
+   */
+  public function abortQuery(string $queryId): bool {
+    $result = $this->sidecarPost('/api/queries/' . urlencode($queryId) . '/abort');
+    return !empty($result['ok']);
+  }
+
+  /**
+   * Fetch sessions from the sidecar.
+   *
+   * @param int $limit
+   *   Maximum number of sessions to return.
+   *
+   * @return array
+   *   Decoded JSON response with sessions.
+   */
+  public function fetchSessions(int $limit = 50): array {
+    return $this->sidecarGet('/api/sessions?limit=' . $limit);
+  }
+
+  /**
+   * Fetch active sessions from the sidecar.
+   *
+   * @return array
+   *   Decoded JSON response with active sessions.
+   */
+  public function fetchActiveSessions(): array {
+    return $this->sidecarGet('/api/sessions/active');
+  }
+
+  /**
+   * Fetch messages for a specific session.
+   *
+   * @param string $sessionId
+   *   The session ID.
+   *
+   * @return array
+   *   Decoded JSON response with session messages.
+   */
+  public function fetchSessionMessages(string $sessionId): array {
+    return $this->sidecarGet('/api/sessions/' . urlencode($sessionId));
+  }
+
+  /**
+   * Fetch background queries from the sidecar.
+   *
+   * @return array
+   *   Decoded JSON response with queries.
+   */
+  public function fetchQueries(): array {
+    return $this->sidecarGet('/api/queries');
+  }
+
+  /**
+   * Perform a GET request to the sidecar.
+   *
+   * @param string $path
+   *   The API path (e.g. '/api/sessions').
+   *
+   * @return array
+   *   Decoded JSON response or empty array on failure.
+   */
+  private function sidecarGet(string $path): array {
+    $url = $this->getSidecarUrl() . $path;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_CONNECTTIMEOUT => 5,
+      CURLOPT_TIMEOUT => 5,
+      CURLOPT_HTTPHEADER => ['Accept: application/json'],
+    ]);
+
+    $result = curl_exec($ch);
+    $errno = curl_errno($ch);
+    curl_close($ch);
+
+    if ($result === FALSE || $errno) {
+      throw new \RuntimeException('Sidecar connection failed');
+    }
+
+    return json_decode((string) $result, TRUE) ?: [];
+  }
+
+  /**
+   * Perform a POST request to the sidecar.
+   *
+   * @param string $path
+   *   The API path.
+   * @param array $body
+   *   Optional request body.
+   *
+   * @return array
+   *   Decoded JSON response or empty array on failure.
+   */
+  private function sidecarPost(string $path, array $body = []): array {
+    $url = $this->getSidecarUrl() . $path;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_POST => TRUE,
+      CURLOPT_POSTFIELDS => json_encode($body),
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_CONNECTTIMEOUT => 5,
+      CURLOPT_TIMEOUT => 5,
+      CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    ]);
+
+    $result = curl_exec($ch);
+    curl_close($ch);
+
+    if ($result === FALSE) {
+      return [];
+    }
+
+    return json_decode((string) $result, TRUE) ?: [];
+  }
+
+  /**
    * Get the sidecar base URL from configuration.
    */
   private function getSidecarUrl(): string {
