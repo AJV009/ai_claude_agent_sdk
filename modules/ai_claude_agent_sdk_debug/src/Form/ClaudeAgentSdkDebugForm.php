@@ -1132,7 +1132,7 @@ final class ClaudeAgentSdkDebugForm extends FormBase {
   }
 
   private function isBridgeIntegrationAvailable(): bool {
-    return \Drupal::moduleHandler()->moduleExists('ai_claude_agent_sdk_agents_integration');
+    return \Drupal::moduleHandler()->moduleExists('ai_claude_agent_sdk_tool_bridge');
   }
 
   private function extractSelectedBridgeToolIds(FormStateInterface $form_state): array {

@@ -1,6 +1,6 @@
 services:
-  ai_claude_agent_sdk_agents_integration.commands:
-    class: Drupal\ai_claude_agent_sdk_agents_integration\Commands\ClaudeAgentSdkToolBridgeCommands
+  ai_claude_agent_sdk_tool_bridge.commands:
+    class: Drupal\ai_claude_agent_sdk_tool_bridge\Commands\ClaudeAgentSdkToolBridgeCommands
     arguments:
       - '@plugin.manager.tool'
       - '@account_switcher'

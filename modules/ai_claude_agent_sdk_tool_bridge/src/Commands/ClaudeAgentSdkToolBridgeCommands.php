@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\ai_claude_agent_sdk_agents_integration\Commands;
+namespace Drupal\ai_claude_agent_sdk_tool_bridge\Commands;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\EntityInterface;

@@ -1,6 +1,6 @@
-name: AI Claude Agent SDK Agents Integration
+name: AI Claude Agent SDK Tool Bridge
 type: module
-description: Integrates AI Claude Agent SDK debug/query workflows with AI Agents and Tool API connector modules.
+description: Drush bridge commands for invoking Drupal Tool API plugins from Claude SDK flows.
 core_version_requirement: ^11 || ^10
 package: AI
 dependencies:

@@ -1,6 +1,6 @@
-# AI Claude Agent SDK Agents Integration
+# AI Claude Agent SDK Tool Bridge
 
-This submodule wires Claude Agent SDK debug/query workflows to Drupal AI agent tooling.
+Drush bridge commands for invoking Drupal Tool API plugins from Claude SDK flows.
 
 ## Required packages
 
@@ -13,7 +13,7 @@ ddev composer require 'drupal/tool:1.0.0-alpha9' 'drupal/mcp_server:1.x-dev@dev'
 ## Enable
 
 ```bash
-ddev drush -y pm:en ai_claude_agent_sdk_agents_integration mcp_server simple_oauth simple_oauth_21 simple_oauth_server_metadata
+ddev drush -y pm:en ai_claude_agent_sdk_tool_bridge mcp_server simple_oauth simple_oauth_21 simple_oauth_server_metadata
 ```
 
 Enabling this submodule also enables these module dependencies:
