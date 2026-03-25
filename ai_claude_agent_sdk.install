@@ -8,6 +8,92 @@
 use Drupal\Core\Url;
 
 /**
+ * Implements hook_schema().
+ */
+function ai_claude_agent_sdk_schema() {
+  $schema['ai_claude_agent_sdk_audit_log'] = [
+    'description' => 'Audit log for Claude Code security tier tool evaluations.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Primary key.',
+      ],
+      'profile_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'The agent profile machine name.',
+      ],
+      'query_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The sidecar query ID.',
+      ],
+      'run_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'default' => '',
+        'description' => 'The Drupal-assigned execution run ID.',
+      ],
+      'executor_uid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => 'The Drupal user ID of the executor.',
+      ],
+      'tool_name' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'The Claude Code tool name (e.g. Bash, Read, Edit).',
+      ],
+      'tool_input' => [
+        'type' => 'text',
+        'size' => 'medium',
+        'description' => 'JSON-encoded tool input parameters.',
+      ],
+      'decision' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'The policy decision: allow, deny, or ask.',
+      ],
+      'reason' => [
+        'type' => 'varchar',
+        'length' => 512,
+        'default' => '',
+        'description' => 'Human-readable reason for the decision.',
+      ],
+      'tier' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'default' => '',
+        'description' => 'The security tier at time of evaluation.',
+      ],
+      'timestamp' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Unix timestamp of the evaluation.',
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'profile_id' => ['profile_id'],
+      'query_id' => ['query_id'],
+      'decision' => ['decision'],
+      'timestamp' => ['timestamp'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
  * Implements hook_requirements().
  */
 function ai_claude_agent_sdk_requirements($phase) {
@@ -71,5 +157,27 @@ function ai_claude_agent_sdk_update_10001() {
   $config = \Drupal::configFactory()->getEditable('ai_claude_agent_sdk.settings');
   if ($config->get('permission_timeout') === NULL) {
     $config->set('permission_timeout', 120)->save();
+  }
+}
+
+/**
+ * Create audit log table for tiered security system.
+ */
+function ai_claude_agent_sdk_update_20001() {
+  $schema = ai_claude_agent_sdk_schema();
+  $table = 'ai_claude_agent_sdk_audit_log';
+  $db_schema = \Drupal::database()->schema();
+  if (!$db_schema->tableExists($table)) {
+    $db_schema->createTable($table, $schema[$table]);
+  }
+}
+
+/**
+ * Add site_base_url setting for policy hook callbacks.
+ */
+function ai_claude_agent_sdk_update_20002(): void {
+  $config = \Drupal::configFactory()->getEditable('ai_claude_agent_sdk.settings');
+  if ($config->get('site_base_url') === NULL) {
+    $config->set('site_base_url', '')->save();
   }
 }

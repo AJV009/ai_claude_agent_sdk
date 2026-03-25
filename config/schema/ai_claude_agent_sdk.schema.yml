@@ -32,6 +32,9 @@ ai_claude_agent_sdk.settings:
     permission_timeout:
       type: integer
       label: 'Permission timeout (seconds)'
+    site_base_url:
+      type: string
+      label: 'Site base URL'
 
 ai_claude_agent_sdk.agent_profile.*:
   type: config_entity
@@ -58,6 +61,9 @@ ai_claude_agent_sdk.agent_profile.*:
     permission_mode:
       type: string
       label: 'Permission mode'
+    security_tier:
+      type: string
+      label: 'Security tier'
     max_turns:
       type: integer
       label: 'Max turns'
