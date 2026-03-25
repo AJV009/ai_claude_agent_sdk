@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\ai_claude_agent_sdk\Service;
 
+use Drupal\ai_claude_agent_sdk\Controller\ClaudePolicyController;
+use Drupal\ai_claude_agent_sdk\Entity\AgentProfileInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 
 /**
@@ -11,12 +13,13 @@ use Drupal\Core\Config\ConfigFactoryInterface;
  *
  * Uses the JS SDK's query() function for structured JSON message streaming.
  */
-final class ClaudeBridgeService {
+final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
 
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
     private readonly ClaudeAgentSdkAuthEnvResolver $authEnvResolver,
+    private readonly SecurityTierManager $tierManager,
   ) {}
 
   /**
@@ -37,9 +40,9 @@ final class ClaudeBridgeService {
    * @param int $permissionTimeoutMs
    *   Timeout in milliseconds for permission requests.
    */
-  public function stream(array $profile, string $prompt, ?string $resume, callable $onChunk, array $mcpHeaders = [], bool $interactivePermissions = FALSE, int $permissionTimeoutMs = 120000): void {
+  public function stream(array $profile, string $prompt, ?string $resume, callable $onChunk, array $mcpHeaders = [], bool $interactivePermissions = FALSE, int $permissionTimeoutMs = 120000, ?int $executorUid = NULL): void {
     $url = $this->getSidecarUrl() . '/api/query';
-    $payload = json_encode($this->buildRequestPayload($profile, $prompt, $resume, $mcpHeaders, $interactivePermissions, $permissionTimeoutMs), JSON_THROW_ON_ERROR);
+    $payload = json_encode($this->buildRequestPayload($profile, $prompt, $resume, $mcpHeaders, $interactivePermissions, $permissionTimeoutMs, $executorUid), JSON_THROW_ON_ERROR);
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -84,11 +87,11 @@ final class ClaudeBridgeService {
    * @return string
    *   The accumulated response text.
    */
-  public function collectResponse(array $profile, string $prompt, ?string $resume = NULL, array $mcpHeaders = []): string {
+  public function collectResponse(array $profile, string $prompt, ?string $resume = NULL, array $mcpHeaders = [], ?int $executorUid = NULL, array &$metadata = []): string {
     $resultText = '';
     $buffer = '';
 
-    $this->stream($profile, $prompt, $resume, function (string $data) use (&$resultText, &$buffer) {
+    $this->stream($profile, $prompt, $resume, function (string $data) use (&$resultText, &$buffer, &$metadata) {
       $buffer .= $data;
       // Process complete SSE lines.
       while (($pos = strpos($buffer, "\n")) !== FALSE) {
@@ -110,6 +113,11 @@ final class ClaudeBridgeService {
         $type = $decoded['type'] ?? '';
         $subtype = $decoded['subtype'] ?? '';
 
+        // Capture session_id for multi-turn conversation resumption.
+        if (isset($decoded['session_id']) && is_string($decoded['session_id']) && $decoded['session_id'] !== '') {
+          $metadata['session_id'] = $decoded['session_id'];
+        }
+
         // SDK result message with success — extract the result text.
         if ($type === 'result' && $subtype === 'success' && isset($decoded['result'])) {
           $resultText = $decoded['result'];
@@ -126,7 +134,7 @@ final class ClaudeBridgeService {
           throw new \RuntimeException('Sidecar error: ' . $decoded['message']);
         }
       }
-    }, $mcpHeaders);
+    }, $mcpHeaders, FALSE, 120000, $executorUid);
 
     return trim($resultText);
   }
@@ -191,7 +199,7 @@ final class ClaudeBridgeService {
    * @return array
    *   The request payload.
    */
-  private function buildRequestPayload(array $profile, string $prompt, ?string $resume, array $mcpHeaders = [], bool $interactivePermissions = FALSE, int $permissionTimeoutMs = 120000): array {
+  private function buildRequestPayload(array $profile, string $prompt, ?string $resume, array $mcpHeaders = [], bool $interactivePermissions = FALSE, int $permissionTimeoutMs = 120000, ?int $executorUid = NULL): array {
     $options = [];
 
     // Map profile fields to SDK option names.
@@ -251,10 +259,95 @@ final class ClaudeBridgeService {
       $options['env'] = $authEnv;
     }
 
+    // Inject executor UID for tool bridge user context.
+    if ($executorUid !== NULL && $executorUid > 0) {
+      $options['env'] = ($options['env'] ?? []);
+      $options['env']['AI_CLAUDE_AGENT_SDK_BRIDGE_UID'] = (string) $executorUid;
+    }
+
     // Interactive permission propagation.
     if ($interactivePermissions) {
       $options['interactivePermissions'] = TRUE;
       $options['permissionTimeoutMs'] = $permissionTimeoutMs;
+    }
+
+    // Inject security tier settings when a security_tier is present.
+    $securityTier = $profile['security_tier'] ?? '';
+    if ($securityTier !== '' && $securityTier !== 'custom') {
+      // Generate the policy endpoint URL.
+      $baseUrl = $this->configFactory->get('ai_claude_agent_sdk.settings')->get('site_base_url') ?: '';
+      if ($baseUrl === '') {
+        // Fall back to constructing from request context if available.
+        if (\Drupal::hasRequest()) {
+          $baseUrl = \Drupal::request()->getSchemeAndHttpHost();
+        }
+      }
+
+      // Validate tier requirements — strict tier refuses to run without hooks.
+      $validation = $this->tierManager->validateTierRequirements($securityTier, $baseUrl);
+      if (!empty($validation['errors'])) {
+        throw new \RuntimeException(implode(' ', $validation['errors']));
+      }
+      foreach ($validation['warnings'] as $warning) {
+        \Drupal::logger('ai_claude_agent_sdk')->warning($warning);
+      }
+
+      if ($baseUrl !== '') {
+        $policyUrl = rtrim($baseUrl, '/') . '/api/claude-policy/evaluate';
+
+        // Build hook config.
+        $hookConfig = $this->tierManager->generateHookConfig($securityTier, $policyUrl);
+        if (!empty($hookConfig)) {
+          // Generate HMAC token for hook authentication.
+          $profileId = $profile['profile_id'] ?? '';
+          $timestamp = \Drupal::time()->getRequestTime();
+          $token = ClaudePolicyController::generatePolicyToken($profileId, $timestamp);
+
+          // Add auth headers to hook config.
+          foreach ($hookConfig as $hookType => &$hookConf) {
+            $hookConf['headers'] = [
+              'X-Policy-Token' => $token,
+              'X-Policy-Profile' => $profileId,
+            ];
+          }
+          unset($hookConf);
+
+          $options['hooks'] = $hookConfig;
+        }
+      }
+
+      // Inject managed settings.
+      $managedSettings = $this->tierManager->generateManagedSettings($securityTier);
+      if (!empty($managedSettings)) {
+        $options['managedSettings'] = $managedSettings;
+      }
+
+      // Inject permission rules from tier.
+      $tierSettings = $this->tierManager->buildTierSettings($securityTier, $this->createProfileStub($profile));
+      if (!empty($tierSettings['permission_rules'])) {
+        $rules = $tierSettings['permission_rules'];
+        if (!empty($rules['allow'])) {
+          $options['permissions'] = $options['permissions'] ?? [];
+          $options['permissions']['allow'] = $rules['allow'];
+        }
+        if (!empty($rules['deny'])) {
+          $options['permissions'] = $options['permissions'] ?? [];
+          $options['permissions']['deny'] = $rules['deny'];
+        }
+      }
+
+      // Override permission mode from tier (not custom).
+      if (!empty($tierSettings['permission_mode'])) {
+        $options['permissionMode'] = $tierSettings['permission_mode'];
+      }
+
+      // Override sandbox from tier.
+      if (isset($tierSettings['sandbox']['enabled'])) {
+        $options['sandbox'] = ['enabled' => $tierSettings['sandbox']['enabled']];
+        if (!empty($tierSettings['sandbox']['network'])) {
+          $options['sandbox']['network'] = TRUE;
+        }
+      }
     }
 
     return array_filter([
@@ -392,8 +485,8 @@ final class ClaudeBridgeService {
    * @return string
    *   The queryId assigned by the sidecar.
    */
-  public function fireAndForget(array $profile, string $prompt, array $mcpHeaders = [], array $metadata = []): string {
-    $payload = $this->buildRequestPayload($profile, $prompt, NULL, $mcpHeaders);
+  public function fireAndForget(array $profile, string $prompt, array $mcpHeaders = [], array $metadata = [], ?int $executorUid = NULL): string {
+    $payload = $this->buildRequestPayload($profile, $prompt, NULL, $mcpHeaders, FALSE, 120000, $executorUid);
     $payload['background'] = TRUE;
     if (!empty($metadata['skillId'])) {
       $payload['skillId'] = $metadata['skillId'];
@@ -403,6 +496,17 @@ final class ClaudeBridgeService {
     }
     if (!empty($metadata['taskId'])) {
       $payload['taskId'] = $metadata['taskId'];
+    }
+
+    // Webhook callback config -- forwarded to sidecar for WebhookEmitter.
+    if (!empty($metadata['callbackUrl'])) {
+      $payload['callbackUrl'] = $metadata['callbackUrl'];
+    }
+    if (!empty($metadata['callbackToken'])) {
+      $payload['callbackToken'] = $metadata['callbackToken'];
+    }
+    if (!empty($metadata['callbackEvents'])) {
+      $payload['callbackEvents'] = $metadata['callbackEvents'];
     }
 
     $url = $this->getSidecarUrl() . '/api/query';
@@ -582,6 +686,41 @@ final class ClaudeBridgeService {
   private function getSidecarUrl(): string {
     $config = $this->configFactory->get('ai_claude_agent_sdk.settings');
     return $config->get('sidecar_url') ?: 'http://localhost:3000';
+  }
+
+  /**
+   * Creates a minimal profile stub from array data for tier settings.
+   *
+   * Used when buildRequestPayload() needs to call SecurityTierManager
+   * but only has the array-format profile data.
+   *
+   * @param array $profile
+   *   Profile data array from toSidecarFormat().
+   *
+   * @return \Drupal\ai_claude_agent_sdk\Entity\AgentProfileInterface
+   *   A stub implementing the interface.
+   */
+  private function createProfileStub(array $profile): AgentProfileInterface {
+    // Load the real entity if profile_id is available.
+    $profileId = $profile['profile_id'] ?? '';
+    if ($profileId !== '') {
+      $entity = \Drupal::entityTypeManager()->getStorage('agent_profile')->load($profileId);
+      if ($entity instanceof AgentProfileInterface) {
+        return $entity;
+      }
+    }
+
+    // Fallback: create a transient entity from array data.
+    /** @var \Drupal\ai_claude_agent_sdk\Entity\AgentProfileInterface $stub */
+    $stub = \Drupal::entityTypeManager()->getStorage('agent_profile')->create([
+      'id' => $profileId ?: 'transient',
+      'permission_mode' => $profile['permission_mode'] ?? 'default',
+      'sandbox' => $profile['sandbox'] ?? FALSE,
+      'allowed_tools' => $profile['allowed_tools'] ?? [],
+      'denied_tools' => $profile['denied_tools'] ?? [],
+      'security_tier' => $profile['security_tier'] ?? 'strict',
+    ]);
+    return $stub;
   }
 
 }
