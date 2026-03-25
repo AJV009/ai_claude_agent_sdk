@@ -8,22 +8,27 @@ use Drupal\ai_claude_agent_sdk\Service\ClaudeAgentSdkAuthEnvResolver;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\key\KeyRepositoryInterface;
+use GuzzleHttp\ClientInterface as HttpClientInterface;
+use GuzzleHttp\Exception\GuzzleException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
 
   protected KeyRepositoryInterface $keyRepository;
   protected ClaudeAgentSdkAuthEnvResolver $authEnvResolver;
+  protected HttpClientInterface $httpClient;
 
-  public function __construct(KeyRepositoryInterface $keyRepository, ClaudeAgentSdkAuthEnvResolver $authEnvResolver) {
+  public function __construct(KeyRepositoryInterface $keyRepository, ClaudeAgentSdkAuthEnvResolver $authEnvResolver, HttpClientInterface $httpClient) {
     $this->keyRepository = $keyRepository;
     $this->authEnvResolver = $authEnvResolver;
+    $this->httpClient = $httpClient;
   }
 
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('key.repository'),
       $container->get('ai_claude_agent_sdk.auth_env_resolver'),
+      $container->get('http_client'),
     );
   }
 
@@ -145,6 +150,25 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       '#max' => 600,
     ];
 
+    $form['policy_hooks'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Policy hooks'),
+      '#open' => TRUE,
+    ];
+
+    // Auto-detect default for DDEV.
+    $siteBaseUrl = $config->get('site_base_url') ?: '';
+    if ($siteBaseUrl === '' && getenv('IS_DDEV_PROJECT') === 'true') {
+      $siteBaseUrl = 'http://web';
+    }
+
+    $form['policy_hooks']['site_base_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Site base URL'),
+      '#default_value' => $siteBaseUrl,
+      '#description' => $this->t('Internal URL the Claude Code sidecar uses to reach this Drupal site for policy hook callbacks. Required for Strict tier enforcement in CLI/cron contexts.<br>DDEV default: <code>http://web</code>'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -170,6 +194,32 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       }
     }
 
+    $siteBaseUrl = trim((string) $form_state->getValue('site_base_url'));
+    if ($siteBaseUrl !== '') {
+      try {
+        $response = $this->httpClient->get($siteBaseUrl, [
+          'timeout' => 5,
+          'connect_timeout' => 3,
+          'http_errors' => FALSE,
+        ]);
+        if ($response->getStatusCode() >= 500) {
+          $form_state->setErrorByName('site_base_url',
+            $this->t('Server error reaching %url (HTTP @code). Make sure this URL is accessible from the sidecar container.', [
+              '%url' => $siteBaseUrl,
+              '@code' => $response->getStatusCode(),
+            ])
+          );
+        }
+      }
+      catch (GuzzleException $e) {
+        $form_state->setErrorByName('site_base_url',
+          $this->t('Could not reach %url. Make sure this URL is accessible from the sidecar container.', [
+            '%url' => $siteBaseUrl,
+          ])
+        );
+      }
+    }
+
     parent::validateForm($form, $form_state);
   }
 
@@ -185,6 +235,7 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ->set('sidecar_url', (string) $form_state->getValue('sidecar_url'))
       ->set('sidecar_ws_url', (string) $form_state->getValue('sidecar_ws_url'))
       ->set('permission_timeout', (int) $form_state->getValue('permission_timeout'))
+      ->set('site_base_url', (string) $form_state->getValue('site_base_url'))
       ->save();
 
     parent::submitForm($form, $form_state);
