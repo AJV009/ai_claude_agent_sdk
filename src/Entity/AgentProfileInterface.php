@@ -68,6 +68,43 @@ interface AgentProfileInterface extends ConfigEntityInterface {
   public function getSandbox(): bool;
 
   /**
+   * Gets whether sandbox network isolation is enabled.
+   */
+  public function getSandboxNetwork(): bool;
+
+  /**
+   * Gets the HTTP policy hook mode.
+   *
+   * @return string
+   *   One of: '' (disabled), 'logging', 'enforced'.
+   */
+  public function getHookMode(): string;
+
+  /**
+   * Gets whether bypass permissions mode is disabled.
+   */
+  public function getDisableBypassMode(): bool;
+
+  /**
+   * Gets whether only managed permission rules are allowed.
+   */
+  public function getManagedRulesOnly(): bool;
+
+  /**
+   * Gets the bash allow patterns.
+   *
+   * @return string[]
+   */
+  public function getBashAllowPatterns(): array;
+
+  /**
+   * Gets the bash deny patterns.
+   *
+   * @return string[]
+   */
+  public function getBashDenyPatterns(): array;
+
+  /**
    * Gets the allowed directories list.
    *
    * @return string[]
@@ -90,6 +127,14 @@ interface AgentProfileInterface extends ConfigEntityInterface {
    * @return string[]
    */
   public function getExtraArgs(): array;
+
+  /**
+   * Gets the security tier.
+   *
+   * @return string
+   *   One of: 'strict', 'standard', 'permissive', 'custom'.
+   */
+  public function getSecurityTier(): string;
 
   /**
    * Serializes the profile to the format expected by the Node.js sidecar.

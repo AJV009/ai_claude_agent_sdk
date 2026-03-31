@@ -139,6 +139,7 @@ class AgentSkillScheduleWorker extends QueueWorkerBase implements ContainerFacto
       $queryId = $this->bridge->fireAndForget(
         $profileData,
         $prompt,
+        null,
         $mcpHeaders,
         [
           'skillId' => $skillId,

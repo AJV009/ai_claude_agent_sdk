@@ -38,12 +38,19 @@ use Drupal\Core\Config\Entity\ConfigEntityBase;
  *     "system_prompt",
  *     "model",
  *     "permission_mode",
+ *     "security_tier",
  *     "max_turns",
  *     "allowed_tools",
  *     "denied_tools",
  *     "mcp_servers",
  *     "working_directory",
  *     "sandbox",
+ *     "sandbox_network",
+ *     "hook_mode",
+ *     "disable_bypass_mode",
+ *     "managed_rules_only",
+ *     "bash_allow_patterns",
+ *     "bash_deny_patterns",
  *     "allowed_directories",
  *     "executor_uid",
  *     "execution_modality",
@@ -90,6 +97,11 @@ class AgentProfile extends ConfigEntityBase implements AgentProfileInterface {
   protected string $permission_mode = 'default';
 
   /**
+   * The security tier.
+   */
+  protected string $security_tier = 'strict';
+
+  /**
    * The max turns.
    */
   protected int $max_turns = 25;
@@ -124,6 +136,40 @@ class AgentProfile extends ConfigEntityBase implements AgentProfileInterface {
    * Whether sandbox mode is enabled.
    */
   protected bool $sandbox = FALSE;
+
+  /**
+   * Whether sandbox network isolation is enabled.
+   */
+  protected bool $sandbox_network = FALSE;
+
+  /**
+   * The HTTP policy hook mode.
+   */
+  protected string $hook_mode = '';
+
+  /**
+   * Whether bypass permissions mode is disabled.
+   */
+  protected bool $disable_bypass_mode = FALSE;
+
+  /**
+   * Whether only managed permission rules are allowed.
+   */
+  protected bool $managed_rules_only = FALSE;
+
+  /**
+   * Bash allow patterns.
+   *
+   * @var string[]
+   */
+  protected array $bash_allow_patterns = [];
+
+  /**
+   * Bash deny patterns.
+   *
+   * @var string[]
+   */
+  protected array $bash_deny_patterns = [];
 
   /**
    * The allowed directories.
@@ -180,6 +226,13 @@ class AgentProfile extends ConfigEntityBase implements AgentProfileInterface {
   /**
    * {@inheritdoc}
    */
+  public function getSecurityTier(): string {
+    return $this->security_tier;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getMaxTurns(): int {
     return $this->max_turns;
   }
@@ -222,6 +275,48 @@ class AgentProfile extends ConfigEntityBase implements AgentProfileInterface {
   /**
    * {@inheritdoc}
    */
+  public function getSandboxNetwork(): bool {
+    return $this->sandbox_network;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getHookMode(): string {
+    return $this->hook_mode;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDisableBypassMode(): bool {
+    return $this->disable_bypass_mode;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getManagedRulesOnly(): bool {
+    return $this->managed_rules_only;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getBashAllowPatterns(): array {
+    return $this->bash_allow_patterns;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getBashDenyPatterns(): array {
+    return $this->bash_deny_patterns;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getAllowedDirectories(): array {
     return $this->allowed_directories;
   }
@@ -252,15 +347,23 @@ class AgentProfile extends ConfigEntityBase implements AgentProfileInterface {
    */
   public function toSidecarFormat(): array {
     return [
+      'profile_id' => $this->id(),
       'system_prompt' => $this->system_prompt,
       'model' => $this->model,
       'permission_mode' => $this->permission_mode,
+      'security_tier' => $this->security_tier,
       'max_turns' => $this->max_turns,
       'allowed_tools' => $this->allowed_tools,
       'denied_tools' => $this->denied_tools,
       'mcp_servers' => $this->mcp_servers,
       'working_directory' => $this->working_directory,
       'sandbox' => $this->sandbox,
+      'sandbox_network' => $this->sandbox_network,
+      'hook_mode' => $this->hook_mode,
+      'disable_bypass_mode' => $this->disable_bypass_mode,
+      'managed_rules_only' => $this->managed_rules_only,
+      'bash_allow_patterns' => $this->bash_allow_patterns,
+      'bash_deny_patterns' => $this->bash_deny_patterns,
       'allowed_directories' => $this->allowed_directories,
       'extra_args' => $this->extra_args,
     ];

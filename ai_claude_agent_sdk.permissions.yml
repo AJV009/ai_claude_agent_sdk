@@ -6,3 +6,8 @@ use claude terminal:
   title: 'Use Claude Terminal'
   description: 'Access the Claude Code terminal. WARNING: This grants shell-level access through Claude Code.'
   restrict access: true
+
+act as ai executor:
+  title: 'Act as AI executor'
+  description: 'Allows this user to be selected as an executor account on agent profiles.'
+  restrict access: true

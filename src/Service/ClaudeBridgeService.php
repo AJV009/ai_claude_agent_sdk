@@ -7,6 +7,8 @@ namespace Drupal\ai_claude_agent_sdk\Service;
 use Drupal\ai_claude_agent_sdk\Controller\ClaudePolicyController;
 use Drupal\ai_claude_agent_sdk\Entity\AgentProfileInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
+use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
 
 /**
  * Bridge service that communicates with the sidecar's /api/query SSE endpoint.
@@ -15,12 +17,22 @@ use Drupal\Core\Config\ConfigFactoryInterface;
  */
 final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
 
+  /**
+   * Nonce TTL in seconds (24 hours).
+   */
+  private const NONCE_TTL_SECONDS = 86400;
+
+  private readonly KeyValueStoreExpirableInterface $nonceStore;
+
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ClaudeAgentSdkProcessLimiter $processLimiter,
     private readonly ClaudeAgentSdkAuthEnvResolver $authEnvResolver,
     private readonly SecurityTierManager $tierManager,
-  ) {}
+    KeyValueExpirableFactoryInterface $nonceStoreFactory,
+  ) {
+    $this->nonceStore = $nonceStoreFactory->get('ai_claude_sdk_policy_nonces');
+  }
 
   /**
    * Stream SSE chunks from the sidecar, passing each to a callback.
@@ -273,18 +285,23 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
 
     // Inject security tier settings when a security_tier is present.
     $securityTier = $profile['security_tier'] ?? '';
-    if ($securityTier !== '' && $securityTier !== 'custom') {
+    if ($securityTier !== '') {
+      // Load the real profile entity to access all tier properties.
+      $profileEntity = $this->createProfileStub($profile);
+
+      // For custom tier, read hook mode from profile; predefined tiers ignore it.
+      $hookMode = $securityTier === 'custom' ? ($profile['hook_mode'] ?? '') : '';
+
       // Generate the policy endpoint URL.
       $baseUrl = $this->configFactory->get('ai_claude_agent_sdk.settings')->get('site_base_url') ?: '';
       if ($baseUrl === '') {
-        // Fall back to constructing from request context if available.
         if (\Drupal::hasRequest()) {
           $baseUrl = \Drupal::request()->getSchemeAndHttpHost();
         }
       }
 
-      // Validate tier requirements — strict tier refuses to run without hooks.
-      $validation = $this->tierManager->validateTierRequirements($securityTier, $baseUrl);
+      // Validate tier requirements.
+      $validation = $this->tierManager->validateTierRequirements($securityTier, $baseUrl, $hookMode);
       if (!empty($validation['errors'])) {
         throw new \RuntimeException(implode(' ', $validation['errors']));
       }
@@ -296,14 +313,14 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
         $policyUrl = rtrim($baseUrl, '/') . '/api/claude-policy/evaluate';
 
         // Build hook config.
-        $hookConfig = $this->tierManager->generateHookConfig($securityTier, $policyUrl);
+        $hookConfig = $this->tierManager->generateHookConfig($securityTier, $policyUrl, $hookMode);
         if (!empty($hookConfig)) {
-          // Generate HMAC token for hook authentication.
+          // Generate nonce-based HMAC token for hook authentication.
           $profileId = $profile['profile_id'] ?? '';
-          $timestamp = \Drupal::time()->getRequestTime();
-          $token = ClaudePolicyController::generatePolicyToken($profileId, $timestamp);
+          $nonce = bin2hex(random_bytes(16));
+          $this->nonceStore->setWithExpire($nonce, $profileId, self::NONCE_TTL_SECONDS);
+          $token = ClaudePolicyController::generatePolicyToken($profileId, $nonce);
 
-          // Add auth headers to hook config.
           foreach ($hookConfig as $hookType => &$hookConf) {
             $hookConf['headers'] = [
               'X-Policy-Token' => $token,
@@ -317,13 +334,22 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
       }
 
       // Inject managed settings.
-      $managedSettings = $this->tierManager->generateManagedSettings($securityTier);
+      if ($securityTier === 'custom') {
+        $managedSettings = $this->tierManager->generateManagedSettings(
+          $securityTier,
+          (bool) ($profile['disable_bypass_mode'] ?? FALSE),
+          (bool) ($profile['managed_rules_only'] ?? FALSE),
+        );
+      }
+      else {
+        $managedSettings = $this->tierManager->generateManagedSettings($securityTier);
+      }
       if (!empty($managedSettings)) {
         $options['managedSettings'] = $managedSettings;
       }
 
       // Inject permission rules from tier.
-      $tierSettings = $this->tierManager->buildTierSettings($securityTier, $this->createProfileStub($profile));
+      $tierSettings = $this->tierManager->buildTierSettings($securityTier, $profileEntity);
       if (!empty($tierSettings['permission_rules'])) {
         $rules = $tierSettings['permission_rules'];
         if (!empty($rules['allow'])) {
@@ -336,7 +362,7 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
         }
       }
 
-      // Override permission mode from tier (not custom).
+      // Override permission mode from tier.
       if (!empty($tierSettings['permission_mode'])) {
         $options['permissionMode'] = $tierSettings['permission_mode'];
       }
@@ -477,6 +503,8 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
    *   Profile data from AgentProfile::toSidecarFormat().
    * @param string $prompt
    *   The user prompt.
+   * @param string|null $resume
+   *   Optional session ID to resume.
    * @param array $mcpHeaders
    *   Optional headers to inject into MCP server configs.
    * @param array $metadata
@@ -485,8 +513,8 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
    * @return string
    *   The queryId assigned by the sidecar.
    */
-  public function fireAndForget(array $profile, string $prompt, array $mcpHeaders = [], array $metadata = [], ?int $executorUid = NULL): string {
-    $payload = $this->buildRequestPayload($profile, $prompt, NULL, $mcpHeaders, FALSE, 120000, $executorUid);
+  public function fireAndForget(array $profile, string $prompt, ?string $resume, array $mcpHeaders = [], array $metadata = [], ?int $executorUid = NULL): string {
+    $payload = $this->buildRequestPayload($profile, $prompt, $resume, $mcpHeaders, FALSE, 120000, $executorUid);
     $payload['background'] = TRUE;
     if (!empty($metadata['skillId'])) {
       $payload['skillId'] = $metadata['skillId'];
@@ -716,6 +744,12 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
       'id' => $profileId ?: 'transient',
       'permission_mode' => $profile['permission_mode'] ?? 'default',
       'sandbox' => $profile['sandbox'] ?? FALSE,
+      'sandbox_network' => $profile['sandbox_network'] ?? FALSE,
+      'hook_mode' => $profile['hook_mode'] ?? '',
+      'disable_bypass_mode' => $profile['disable_bypass_mode'] ?? FALSE,
+      'managed_rules_only' => $profile['managed_rules_only'] ?? FALSE,
+      'bash_allow_patterns' => $profile['bash_allow_patterns'] ?? [],
+      'bash_deny_patterns' => $profile['bash_deny_patterns'] ?? [],
       'allowed_tools' => $profile['allowed_tools'] ?? [],
       'denied_tools' => $profile['denied_tools'] ?? [],
       'security_tier' => $profile['security_tier'] ?? 'strict',

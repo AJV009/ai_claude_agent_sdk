@@ -12,7 +12,7 @@ use Drupal\Component\Uuid\UuidInterface;
 /**
  * Creates and manages execution envelopes that track who owns MCP operations.
  */
-final class ExecutionEnvelopeService {
+final class ExecutionEnvelopeService implements ExecutionEnvelopeServiceInterface {
 
   private const TEMPSTORE_COLLECTION = 'ai_claude_agent_sdk.execution';
 
@@ -20,6 +20,7 @@ final class ExecutionEnvelopeService {
     private readonly SharedTempStoreFactory $tempStoreFactory,
     private readonly AccountProxyInterface $currentUser,
     private readonly UuidInterface $uuid,
+    private readonly ExecutionPrincipalResolver $principalResolver,
   ) {}
 
   /**
@@ -29,26 +30,30 @@ final class ExecutionEnvelopeService {
    *   The agent profile.
    * @param int|null $initiatorUid
    *   The UID of the user who initiated the request. Defaults to current user.
+   * @param string $modality
+   *   The execution modality: 'interactive', 'background', or 'outside_in'.
    *
    * @return array
    *   The envelope data with keys: run_id, profile_id, executor_uid,
-   *   initiator_uid, modality, created.
+   *   executor_roles, executor_name, initiator_uid, modality, created.
+   *
+   * @throws \Drupal\ai_claude_agent_sdk\Exception\ExecutionPrincipalException
+   *   If the executor cannot be resolved for the given modality.
    */
-  public function create(AgentProfileInterface $profile, ?int $initiatorUid = NULL): array {
+  public function create(AgentProfileInterface $profile, ?int $initiatorUid = NULL, string $modality = 'interactive'): array {
     $runId = $this->uuid->generate();
     $initiatorUid = $initiatorUid ?? (int) $this->currentUser->id();
 
-    $executorUid = $profile->getExecutorUid();
-    if ($executorUid === 0) {
-      $executorUid = (int) $this->currentUser->id();
-    }
+    $executor = $this->principalResolver->resolve($profile, $modality);
 
     $envelope = [
       'run_id' => $runId,
       'profile_id' => $profile->id(),
-      'executor_uid' => $executorUid,
+      'executor_uid' => (int) $executor->id(),
+      'executor_roles' => $executor->getRoles(),
+      'executor_name' => $executor->getAccountName(),
       'initiator_uid' => $initiatorUid,
-      'modality' => $profile->getExecutionModality() ?: 'interactive',
+      'modality' => $modality,
       'created' => time(),
     ];
 

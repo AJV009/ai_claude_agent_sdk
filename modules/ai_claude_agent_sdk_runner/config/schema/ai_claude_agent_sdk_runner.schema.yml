@@ -1,0 +1,31 @@
+ai_claude_agent_sdk_runner.runner_skill.*:
+  type: config_entity
+  label: 'Agent Runner Skill'
+  mapping:
+    id:
+      type: string
+      label: 'ID'
+    label:
+      type: label
+      label: 'Label'
+    uuid:
+      type: string
+      label: 'UUID'
+    agent_id:
+      type: string
+      label: 'Source AI Agent ID'
+    source_tool_id:
+      type: string
+      label: 'Source Tool API plugin ID'
+    description:
+      type: string
+      label: 'One-line description'
+    skill_body:
+      type: text
+      label: 'SKILL.md body'
+    input_schema:
+      type: mapping
+      label: 'Input schema'
+    auto_generated:
+      type: boolean
+      label: 'Auto-generated flag'

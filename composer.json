@@ -2,9 +2,9 @@
   "name": "drupal/ai_claude_agent_sdk",
   "description": "Integrates Drupal with Claude Code for AI-powered agent workflows.",
   "type": "drupal-module",
+  "version": "2.0.x-dev",
   "license": "GPL-2.0-or-later",
   "require": {
-    "drupal/ai": "^2.0",
     "drupal/ai_claude_agent_sdk_sidecar_scaffold": "*",
     "drupal/key": "^1.0"
   }

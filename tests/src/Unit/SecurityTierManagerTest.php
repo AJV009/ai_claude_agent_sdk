@@ -84,6 +84,12 @@ class SecurityTierManagerTest extends TestCase {
     $profile = $this->createMock(AgentProfileInterface::class);
     $profile->method('getPermissionMode')->willReturn('delegate');
     $profile->method('getSandbox')->willReturn(TRUE);
+    $profile->method('getSandboxNetwork')->willReturn(FALSE);
+    $profile->method('getHookMode')->willReturn('');
+    $profile->method('getDisableBypassMode')->willReturn(FALSE);
+    $profile->method('getManagedRulesOnly')->willReturn(FALSE);
+    $profile->method('getBashAllowPatterns')->willReturn([]);
+    $profile->method('getBashDenyPatterns')->willReturn([]);
     $profile->method('getAllowedTools')->willReturn(['Read', 'Grep']);
     $profile->method('getDeniedTools')->willReturn(['Bash']);
 
@@ -135,8 +141,7 @@ class SecurityTierManagerTest extends TestCase {
   }
 
   public function testGenerateHookConfigCustomReturnsEmpty(): void {
-    $hooks = $this->manager->generateHookConfig('custom', 'https://example.com/api/claude-policy/evaluate');
-
+    $hooks = $this->manager->generateHookConfig('custom', 'https://example.com/api/claude-policy/evaluate', '');
     $this->assertEmpty($hooks);
   }
 
@@ -263,6 +268,83 @@ class SecurityTierManagerTest extends TestCase {
 
   public function testValidateTierRequirementsStandardWithUrl(): void {
     $result = $this->manager->validateTierRequirements('standard', 'http://web');
+    $this->assertEmpty($result['errors']);
+    $this->assertEmpty($result['warnings']);
+  }
+
+  public function testCustomTierReadsAllProperties(): void {
+    $profile = $this->createMock(AgentProfileInterface::class);
+    $profile->method('getPermissionMode')->willReturn('acceptEdits');
+    $profile->method('getSandbox')->willReturn(TRUE);
+    $profile->method('getSandboxNetwork')->willReturn(TRUE);
+    $profile->method('getHookMode')->willReturn('enforced');
+    $profile->method('getDisableBypassMode')->willReturn(TRUE);
+    $profile->method('getManagedRulesOnly')->willReturn(TRUE);
+    $profile->method('getBashAllowPatterns')->willReturn(['Bash(ls:*)']);
+    $profile->method('getBashDenyPatterns')->willReturn(['Bash(rm -rf *)']);
+    $profile->method('getAllowedTools')->willReturn(['Read']);
+    $profile->method('getDeniedTools')->willReturn(['Bash']);
+
+    $settings = $this->manager->buildTierSettings('custom', $profile);
+
+    $this->assertSame('acceptEdits', $settings['permission_mode']);
+    $this->assertTrue($settings['sandbox']['enabled']);
+    $this->assertTrue($settings['sandbox']['network']);
+    $this->assertSame('enforced', $settings['hooks']['mode']);
+    $this->assertTrue($settings['managed_settings']['disableBypassPermissionsMode']);
+    $this->assertTrue($settings['managed_settings']['allowManagedPermissionRulesOnly']);
+    $this->assertSame(['Bash(ls:*)'], $settings['permission_rules']['allow']);
+    $this->assertSame(['Bash(rm -rf *)'], $settings['permission_rules']['deny']);
+    $this->assertSame(['Read'], $settings['allowed_tools']);
+    $this->assertSame(['Bash'], $settings['denied_tools']);
+  }
+
+  public function testCustomTierDisabledHookMode(): void {
+    $profile = $this->createMock(AgentProfileInterface::class);
+    $profile->method('getPermissionMode')->willReturn('default');
+    $profile->method('getSandbox')->willReturn(FALSE);
+    $profile->method('getSandboxNetwork')->willReturn(FALSE);
+    $profile->method('getHookMode')->willReturn('');
+    $profile->method('getDisableBypassMode')->willReturn(FALSE);
+    $profile->method('getManagedRulesOnly')->willReturn(FALSE);
+    $profile->method('getBashAllowPatterns')->willReturn([]);
+    $profile->method('getBashDenyPatterns')->willReturn([]);
+    $profile->method('getAllowedTools')->willReturn([]);
+    $profile->method('getDeniedTools')->willReturn([]);
+
+    $settings = $this->manager->buildTierSettings('custom', $profile);
+
+    $this->assertEmpty($settings['hooks']);
+    $this->assertFalse($settings['managed_settings']['disableBypassPermissionsMode']);
+    $this->assertFalse($settings['managed_settings']['allowManagedPermissionRulesOnly']);
+    $this->assertEmpty($settings['permission_rules']['allow']);
+    $this->assertEmpty($settings['permission_rules']['deny']);
+  }
+
+  public function testGenerateHookConfigCustomWithMode(): void {
+    $hooks = $this->manager->generateHookConfig('custom', 'https://example.com/api', 'enforced');
+    $this->assertArrayHasKey('PreToolUse', $hooks);
+    $this->assertSame('enforced', $hooks['PreToolUse']['mode']);
+  }
+
+  public function testGenerateHookConfigCustomDisabled(): void {
+    $hooks = $this->manager->generateHookConfig('custom', 'https://example.com/api', '');
+    $this->assertEmpty($hooks);
+  }
+
+  public function testGenerateManagedSettingsCustom(): void {
+    $settings = $this->manager->generateManagedSettings('custom', TRUE, FALSE);
+    $this->assertTrue($settings['disableBypassPermissionsMode']);
+    $this->assertArrayNotHasKey('allowManagedPermissionRulesOnly', $settings);
+  }
+
+  public function testValidateCustomTierWithHookModeNoUrl(): void {
+    $result = $this->manager->validateTierRequirements('custom', '', 'enforced');
+    $this->assertCount(1, $result['warnings']);
+  }
+
+  public function testValidateCustomTierWithHookModeHasUrl(): void {
+    $result = $this->manager->validateTierRequirements('custom', 'http://web', 'enforced');
     $this->assertEmpty($result['errors']);
     $this->assertEmpty($result['warnings']);
   }

@@ -98,17 +98,30 @@ final class SecurityTierManager {
   /**
    * Generates Claude Code managed settings for a tier.
    *
-   * Written to .claude/settings.json in the working directory.
-   *
    * @param string $tier
    *   The security tier.
+   * @param bool $disableBypassMode
+   *   For custom tier: whether to disable bypass mode. Ignored for predefined.
+   * @param bool $managedRulesOnly
+   *   For custom tier: whether to enforce managed rules only. Ignored for predefined.
    *
    * @return array
    *   Managed settings array.
    */
-  public function generateManagedSettings(string $tier): array {
+  public function generateManagedSettings(string $tier, bool $disableBypassMode = FALSE, bool $managedRulesOnly = FALSE): array {
     if (!in_array($tier, self::VALID_TIERS, TRUE)) {
       $tier = 'strict';
+    }
+
+    if ($tier === 'custom') {
+      $settings = [];
+      if ($disableBypassMode) {
+        $settings['disableBypassPermissionsMode'] = TRUE;
+      }
+      if ($managedRulesOnly) {
+        $settings['allowManagedPermissionRulesOnly'] = TRUE;
+      }
+      return $settings;
     }
 
     return match ($tier) {
@@ -123,38 +136,41 @@ final class SecurityTierManager {
       'permissive' => [
         'disableBypassPermissionsMode' => TRUE,
       ],
-      'custom' => [],
     };
   }
 
   /**
    * Generates hook configuration for the HTTP policy endpoint.
    *
-   * Configures PreToolUse and PostToolUse hooks pointing to the Drupal
-   * policy evaluation endpoint.
-   *
    * @param string $tier
    *   The security tier.
    * @param string $policyEndpointUrl
    *   The full URL of the policy evaluation endpoint.
+   * @param string $hookMode
+   *   For custom tier: the hook mode from profile ('', 'logging', 'enforced').
+   *   Ignored for predefined tiers.
    *
    * @return array
-   *   Hook config array. Empty for 'custom' tier.
+   *   Hook config array. Empty when hooks are disabled.
    */
-  public function generateHookConfig(string $tier, string $policyEndpointUrl): array {
+  public function generateHookConfig(string $tier, string $policyEndpointUrl, string $hookMode = ''): array {
     if (!in_array($tier, self::VALID_TIERS, TRUE)) {
       $tier = 'strict';
     }
 
     if ($tier === 'custom') {
-      return [];
+      if ($hookMode === '') {
+        return [];
+      }
+      $mode = $hookMode;
     }
-
-    $mode = match ($tier) {
-      'strict', 'standard' => 'enforced',
-      'permissive' => 'logging',
-      default => 'enforced',
-    };
+    else {
+      $mode = match ($tier) {
+        'strict', 'standard' => 'enforced',
+        'permissive' => 'logging',
+        default => 'enforced',
+      };
+    }
 
     return [
       'PreToolUse' => [
@@ -171,19 +187,17 @@ final class SecurityTierManager {
   /**
    * Validates whether tier requirements can be met in the current context.
    *
-   * Called by ClaudeBridgeService after resolving site_base_url. Returns
-   * errors for strict tier (blocks execution) and warnings for
-   * standard/permissive (logs and continues without hooks).
-   *
    * @param string $tier
-   *   The security tier (strict, standard, permissive, custom).
+   *   The security tier.
    * @param string $baseUrl
    *   The resolved site base URL (may be empty string).
+   * @param string $hookMode
+   *   For custom tier: the hook mode from profile. Ignored for predefined.
    *
    * @return array{errors: string[], warnings: string[]}
-   *   Arrays of error and warning messages. Empty arrays = OK.
+   *   Arrays of error and warning messages.
    */
-  public function validateTierRequirements(string $tier, string $baseUrl): array {
+  public function validateTierRequirements(string $tier, string $baseUrl, string $hookMode = ''): array {
     if (!in_array($tier, self::VALID_TIERS, TRUE)) {
       $tier = 'strict';
     }
@@ -192,10 +206,17 @@ final class SecurityTierManager {
     $warnings = [];
 
     if ($tier === 'custom') {
+      if ($hookMode !== '' && $baseUrl === '') {
+        $warnings[] = sprintf(
+          'Policy hooks cannot be activated: site_base_url is not configured. '
+          . 'The custom tier hook mode "%s" will not be active. '
+          . 'Configure site_base_url at /admin/config/ai/claude-agent-sdk.',
+          $hookMode
+        );
+      }
       return ['errors' => $errors, 'warnings' => $warnings];
     }
 
-    // All non-custom tiers require a base URL for policy hooks.
     if ($baseUrl === '') {
       $message = sprintf(
         'Policy hooks cannot be activated: site_base_url is not configured and no HTTP request context is available. '
@@ -338,19 +359,24 @@ final class SecurityTierManager {
   }
 
   /**
-   * Custom tier: pass through profile's manual settings.
+   * Custom tier: read all settings from profile's manual configuration.
    */
   private function buildCustomSettings(AgentProfileInterface $profile): array {
+    $hookMode = $profile->getHookMode();
     return [
       'permission_mode' => $profile->getPermissionMode(),
       'sandbox' => [
         'enabled' => $profile->getSandbox(),
+        'network' => $profile->getSandboxNetwork(),
       ],
-      'hooks' => [],
-      'managed_settings' => [],
+      'hooks' => $hookMode !== '' ? ['mode' => $hookMode] : [],
+      'managed_settings' => [
+        'disableBypassPermissionsMode' => $profile->getDisableBypassMode(),
+        'allowManagedPermissionRulesOnly' => $profile->getManagedRulesOnly(),
+      ],
       'permission_rules' => [
-        'allow' => [],
-        'deny' => [],
+        'allow' => $profile->getBashAllowPatterns(),
+        'deny' => $profile->getBashDenyPatterns(),
       ],
       'allowed_tools' => $profile->getAllowedTools(),
       'denied_tools' => $profile->getDeniedTools(),

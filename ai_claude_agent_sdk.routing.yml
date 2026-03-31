@@ -185,6 +185,17 @@ entity.scheduled_task.delete_form:
   requirements:
     _permission: 'administer claude agent sdk'
 
+ai_claude_agent_sdk.policy_evaluate:
+  path: '/api/claude-policy/evaluate'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk\Controller\ClaudePolicyController::evaluate'
+  requirements:
+    # Authentication is handled by HMAC token validation in the controller.
+    _access: 'TRUE'
+  methods: [POST]
+  options:
+    no_cache: TRUE
+
 ai_claude_agent_sdk.query_abort:
   path: '/admin/config/ai/claude-agent-sdk/queries/{query_id}/abort'
   defaults:
@@ -192,3 +203,10 @@ ai_claude_agent_sdk.query_abort:
     _title: 'Interrupt Query'
   requirements:
     _permission: 'use claude terminal'
+
+ai_claude_agent_sdk.executor_autocomplete:
+  path: '/admin/config/ai/claude-agent-sdk/autocomplete/executor'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk\Controller\ExecutorAutocompleteController::handleAutocomplete'
+  requirements:
+    _permission: 'administer claude agent sdk'

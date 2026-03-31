@@ -1,0 +1,9 @@
+name: 'AI Claude Agent SDK Runner'
+type: module
+description: 'Routes AI Agent execution through Claude Code via the sidecar.'
+package: 'AI'
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - ai_claude_agent_sdk:ai_claude_agent_sdk
+  - ai_agents:ai_agents
+  - ai:ai_assistant_api

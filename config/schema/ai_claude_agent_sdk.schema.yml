@@ -35,6 +35,9 @@ ai_claude_agent_sdk.settings:
     site_base_url:
       type: string
       label: 'Site base URL'
+    restrict_executor_by_permission:
+      type: boolean
+      label: 'Restrict executor accounts by permission'
 
 ai_claude_agent_sdk.agent_profile.*:
   type: config_entity
@@ -79,6 +82,30 @@ ai_claude_agent_sdk.agent_profile.*:
       sequence:
         type: string
         label: 'Tool name'
+    sandbox_network:
+      type: boolean
+      label: 'Sandbox network isolation'
+    hook_mode:
+      type: string
+      label: 'HTTP policy hook mode'
+    disable_bypass_mode:
+      type: boolean
+      label: 'Disable bypass permissions mode'
+    managed_rules_only:
+      type: boolean
+      label: 'Managed rules only'
+    bash_allow_patterns:
+      type: sequence
+      label: 'Bash allow patterns'
+      sequence:
+        type: string
+        label: 'Pattern'
+    bash_deny_patterns:
+      type: sequence
+      label: 'Bash deny patterns'
+      sequence:
+        type: string
+        label: 'Pattern'
     mcp_servers:
       type: sequence
       label: 'MCP servers'

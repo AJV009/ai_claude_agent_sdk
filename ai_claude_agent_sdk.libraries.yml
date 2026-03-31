@@ -19,3 +19,11 @@ sessions:
   css:
     theme:
       css/claude-sessions.css: {}
+
+user-reference-autocomplete:
+  js:
+    js/user-reference-autocomplete.js: {}
+  dependencies:
+    - core/drupal
+    - core/jquery
+    - core/once

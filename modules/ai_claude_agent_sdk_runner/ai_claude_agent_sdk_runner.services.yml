@@ -1,0 +1,45 @@
+services:
+  ai_claude_agent_sdk_runner.agent_runner_decorator:
+    class: Drupal\ai_claude_agent_sdk_runner\Service\ClaudeAgentRunnerDecorator
+    decorates: ai_assistant_api.agent_runner
+    arguments:
+      - '@ai_claude_agent_sdk_runner.agent_runner_decorator.inner'
+      - '@ai_claude_agent_sdk.bridge'
+      - '@entity_type.manager'
+      - '@plugin.manager.ai_agents'
+      - '@ai_claude_agent_sdk_runner.execution_store'
+      - '@ai_claude_agent_sdk_runner.result_mapper'
+      - '@ai_claude_agent_sdk.execution_envelope'
+      - '@ai_claude_agent_sdk.execution_principal_resolver'
+      - '@config.factory'
+
+  ai_claude_agent_sdk_runner.runner_skill_file_sync:
+    class: Drupal\ai_claude_agent_sdk_runner\Service\AgentRunnerSkillFileSync
+    arguments:
+      - '@config.factory'
+      - '@file_system'
+
+  ai_claude_agent_sdk_runner.tool_transition_layer:
+    class: Drupal\ai_claude_agent_sdk_runner\Service\ToolTransitionLayer
+    arguments:
+      - '@plugin.manager.ai.function_calls'
+      - '@entity_type.manager'
+
+  ai_claude_agent_sdk_runner.execution_store:
+    class: Drupal\ai_claude_agent_sdk_runner\Service\ExecutionStore
+    arguments:
+      - '@database'
+
+  ai_claude_agent_sdk_runner.result_mapper:
+    class: Drupal\ai_claude_agent_sdk_runner\Service\ResultMapper
+    arguments:
+      - '@ai_claude_agent_sdk_runner.execution_store'
+      - '@event_dispatcher'
+      - '@plugin.manager.ai_agents'
+
+  ai_claude_agent_sdk_runner.poll_controller:
+    class: Drupal\ai_claude_agent_sdk_runner\Controller\ClaudeRunnerPollController
+    arguments:
+      - '@ai_claude_agent_sdk_runner.execution_store'
+      - '@ai_claude_agent_sdk_runner.result_mapper'
+      - '@current_user'

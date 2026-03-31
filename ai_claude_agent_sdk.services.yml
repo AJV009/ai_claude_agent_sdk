@@ -7,13 +7,30 @@ services:
     arguments: ['@config.factory', '@key.repository']
   ai_claude_agent_sdk.bridge:
     class: Drupal\ai_claude_agent_sdk\Service\ClaudeBridgeService
-    arguments: ['@config.factory', '@ai_claude_agent_sdk.process_limiter', '@ai_claude_agent_sdk.auth_env_resolver']
+    arguments:
+      - '@config.factory'
+      - '@ai_claude_agent_sdk.process_limiter'
+      - '@ai_claude_agent_sdk.auth_env_resolver'
+      - '@ai_claude_agent_sdk.security_tier_manager'
+      - '@keyvalue.expirable'
   ai_claude_agent_sdk.skill_file_sync:
     class: Drupal\ai_claude_agent_sdk\Service\AgentSkillFileSync
     arguments: ['@config.factory', '@file_system', '@entity_type.manager']
   ai_claude_agent_sdk.scheduler:
     class: Drupal\ai_claude_agent_sdk\Service\AgentSkillScheduler
     arguments: ['@entity_type.manager', '@state', '@queue', '@ai_claude_agent_sdk.bridge', '@datetime.time']
+  ai_claude_agent_sdk.security_tier_manager:
+    class: Drupal\ai_claude_agent_sdk\Service\SecurityTierManager
+  ai_claude_agent_sdk.policy_evaluator:
+    class: Drupal\ai_claude_agent_sdk\Service\PolicyEvaluator
   ai_claude_agent_sdk.execution_envelope:
     class: Drupal\ai_claude_agent_sdk\Service\ExecutionEnvelopeService
-    arguments: ['@tempstore.shared', '@current_user', '@uuid']
+    arguments: ['@tempstore.shared', '@current_user', '@uuid', '@ai_claude_agent_sdk.execution_principal_resolver']
+  ai_claude_agent_sdk.execution_principal_resolver:
+    class: Drupal\ai_claude_agent_sdk\Service\ExecutionPrincipalResolver
+    arguments:
+      - '@account_switcher'
+      - '@entity_type.manager'
+      - '@current_user'
+      - '@logger.factory'
+      - '@config.factory'

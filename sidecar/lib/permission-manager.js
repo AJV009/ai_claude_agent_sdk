@@ -29,13 +29,21 @@ export function createPermissionManager() {
       const requestId = crypto.randomUUID();
 
       const promise = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          queryMap.delete(requestId);
-          if (queryMap.size === 0) pending.delete(queryId);
-          resolve({ behavior: 'deny', message: 'Permission request timed out' });
-        }, timeoutMs);
+        let timer = null;
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => {
+            queryMap.delete(requestId);
+            if (queryMap.size === 0) pending.delete(queryId);
+            resolve({ behavior: 'deny', message: 'Permission request timed out' });
+          }, timeoutMs);
+        }
 
-        queryMap.set(requestId, { resolve, reject, timer });
+        queryMap.set(requestId, {
+          resolve,
+          reject,
+          timer,
+          suggestions: opts?.suggestions || null,
+        });
       });
 
       return { requestId, promise };
@@ -56,11 +64,24 @@ export function createPermissionManager() {
       const entry = queryMap.get(requestId);
       if (!entry) return false;
 
-      clearTimeout(entry.timer);
+      if (entry.timer) clearTimeout(entry.timer);
       queryMap.delete(requestId);
       if (queryMap.size === 0) pending.delete(queryId);
 
-      entry.resolve(decision);
+      // Map to SDK PermissionResult format.
+      if (decision.behavior === 'allow' && entry.suggestions) {
+        entry.resolve({
+          behavior: 'allow',
+          updatedPermissions: entry.suggestions,
+        });
+      } else if (decision.behavior === 'deny') {
+        entry.resolve({
+          behavior: 'deny',
+          message: decision.message || 'User denied this action',
+        });
+      } else {
+        entry.resolve(decision);
+      }
       return true;
     },
 
@@ -74,7 +95,7 @@ export function createPermissionManager() {
       if (!queryMap) return;
 
       for (const [, entry] of queryMap) {
-        clearTimeout(entry.timer);
+        if (entry.timer) clearTimeout(entry.timer);
         const err = new Error('Query aborted');
         err.name = 'AbortError';
         entry.reject(err);

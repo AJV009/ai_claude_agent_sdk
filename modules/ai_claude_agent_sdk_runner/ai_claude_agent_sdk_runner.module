@@ -1,0 +1,318 @@
+<?php
+
+/**
+ * @file
+ * AI Claude Agent SDK Runner module.
+ *
+ * Routes AI Agent execution through Claude Code via the sidecar.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Adds bridge-enabled setting to AgentProfile forms and
+ * filters the profile dropdown on AiAgent forms.
+ */
+function ai_claude_agent_sdk_runner_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // --- AgentProfile forms: add bridge_enabled third-party setting ---
+  if (in_array($form_id, ['agent_profile_add_form', 'agent_profile_edit_form'], TRUE)) {
+    _ai_claude_agent_sdk_runner_profile_form_alter($form, $form_state);
+    return;
+  }
+
+  // --- AiAgent forms: filter to bridge-enabled profiles only ---
+  if (in_array($form_id, ['ai_agent_add_form', 'ai_agent_edit_form'], TRUE)) {
+    _ai_claude_agent_sdk_runner_agent_form_alter($form, $form_state);
+    return;
+  }
+
+  // --- BPMN modeler: add Claude Code Runner status banner ---
+  if ($form_id === 'bpmn_io_modeler') {
+    _ai_claude_agent_sdk_runner_modeler_form_alter($form, $form_state);
+    return;
+  }
+}
+
+/**
+ * Adds "AI Agents Bridge" section to AgentProfile forms.
+ */
+function _ai_claude_agent_sdk_runner_profile_form_alter(&$form, FormStateInterface $form_state) {
+  $form_object = $form_state->getFormObject();
+  if (!method_exists($form_object, 'getEntity')) {
+    return;
+  }
+
+  $entity = $form_object->getEntity();
+  $settings = $entity->getThirdPartySetting('ai_claude_agent_sdk_runner', 'bridge', []);
+
+  $form['runner_settings'] = [
+    '#type' => 'details',
+    '#title' => t('AI Agents Bridge'),
+    '#description' => t(
+      'When enabled, this profile can be selected as the execution engine '
+      . "for AI Agent config entities. The agent's Drupal tools will be "
+      . "converted to Claude Code skills within this profile's context."
+    ),
+    '#open' => !empty($settings['bridge_enabled']),
+    '#weight' => 85,
+  ];
+
+  $form['runner_settings']['bridge_enabled'] = [
+    '#type' => 'checkbox',
+    '#title' => t('Available as AI Agents execution engine'),
+    '#default_value' => $settings['bridge_enabled'] ?? FALSE,
+  ];
+
+  $form['actions']['submit']['#submit'][] = '_ai_claude_agent_sdk_runner_profile_form_submit';
+}
+
+/**
+ * Submit handler: saves bridge_enabled as third-party setting on AgentProfile.
+ */
+function _ai_claude_agent_sdk_runner_profile_form_submit(array &$form, FormStateInterface $form_state) {
+  $form_object = $form_state->getFormObject();
+  if (!method_exists($form_object, 'getEntity')) {
+    return;
+  }
+
+  $entity = $form_object->getEntity();
+  $bridge_enabled = (bool) $form_state->getValue('bridge_enabled');
+
+  $entity->setThirdPartySetting('ai_claude_agent_sdk_runner', 'bridge', [
+    'bridge_enabled' => $bridge_enabled,
+  ]);
+  $entity->save();
+}
+
+/**
+ * Returns options array of bridge-enabled AgentProfiles.
+ *
+ * @return array
+ *   Keyed by profile ID, value is profile label.
+ */
+function _ai_claude_agent_sdk_runner_get_bridge_profiles(): array {
+  $profile_storage = \Drupal::entityTypeManager()->getStorage('agent_profile');
+  $profiles = $profile_storage->loadMultiple();
+  $options = ['' => t('- Select a profile -')];
+
+  foreach ($profiles as $profile) {
+    $settings = $profile->getThirdPartySetting('ai_claude_agent_sdk_runner', 'bridge', []);
+    if (!empty($settings['bridge_enabled'])) {
+      $options[$profile->id()] = $profile->label();
+    }
+  }
+
+  return $options;
+}
+
+/**
+ * Enhances AiAgent form with Claude Code Runner settings.
+ *
+ * Filters profile dropdown to only bridge-enabled profiles.
+ */
+function _ai_claude_agent_sdk_runner_agent_form_alter(&$form, FormStateInterface $form_state) {
+  $form_object = $form_state->getFormObject();
+  if (!method_exists($form_object, 'getEntity')) {
+    return;
+  }
+
+  $entity = $form_object->getEntity();
+  $config = $entity->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
+
+  $bridge_profiles = _ai_claude_agent_sdk_runner_get_bridge_profiles();
+
+  $form['claude_runner'] = [
+    '#type' => 'details',
+    '#title' => t('Claude Code Runner'),
+    '#description' => t(
+      "Route this agent's execution through Claude Code instead of the "
+      . "built-in AI Agents ReACT loop. Claude Code handles its own "
+      . "reasoning, tool use, and context management."
+    ),
+    '#open' => !empty($config['enabled']),
+    '#weight' => 90,
+  ];
+
+  $form['claude_runner']['claude_runner_enabled'] = [
+    '#type' => 'checkbox',
+    '#title' => t('Use Claude Code as execution engine'),
+    '#default_value' => $config['enabled'] ?? FALSE,
+  ];
+
+  $form['claude_runner']['claude_runner_profile_id'] = [
+    '#type' => 'select',
+    '#title' => t('Agent Profile'),
+    '#description' => t(
+      'Only profiles with "AI Agents Bridge" enabled appear here. '
+      . 'The selected profile controls model, security tier, and execution '
+      . "permissions. This agent's tools will be converted to Claude Code skills."
+    ),
+    '#options' => $bridge_profiles,
+    '#default_value' => $config['profile_id'] ?? '',
+    '#states' => [
+      'visible' => [
+        ':input[name="claude_runner_enabled"]' => ['checked' => TRUE],
+      ],
+      'required' => [
+        ':input[name="claude_runner_enabled"]' => ['checked' => TRUE],
+      ],
+    ],
+  ];
+
+  // Warn if no bridge-enabled profiles exist.
+  if (count($bridge_profiles) <= 1) {
+    $form['claude_runner']['no_profiles_warning'] = [
+      '#type' => 'markup',
+      '#markup' => '<p><em>' . t(
+        'No bridge-enabled profiles found. Enable "AI Agents Bridge" on at least one Agent Profile first.'
+      ) . '</em></p>',
+      '#states' => [
+        'visible' => [
+          ':input[name="claude_runner_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+  }
+
+  $form['actions']['submit']['#submit'][] = '_ai_claude_agent_sdk_runner_form_submit';
+}
+
+/**
+ * Submit handler: saves Claude Code runner settings as third-party settings.
+ */
+function _ai_claude_agent_sdk_runner_form_submit(array &$form, FormStateInterface $form_state) {
+  $form_object = $form_state->getFormObject();
+  if (!method_exists($form_object, 'getEntity')) {
+    return;
+  }
+
+  $entity = $form_object->getEntity();
+  $enabled = (bool) $form_state->getValue('claude_runner_enabled');
+  $profile_id = $form_state->getValue('claude_runner_profile_id') ?? '';
+
+  $entity->setThirdPartySetting('ai_claude_agent_sdk_runner', 'config', [
+    'enabled' => $enabled,
+    'profile_id' => $profile_id,
+  ]);
+  $entity->save();
+}
+
+/**
+ * Adds Claude Code Runner status banner to the BPMN modeler page.
+ *
+ * The BPMN modeler uses a JS-driven form that doesn't support standard
+ * Drupal form elements. We add a status banner showing whether Claude Code
+ * runner is enabled for this agent and link to the standard form for editing.
+ */
+function _ai_claude_agent_sdk_runner_modeler_form_alter(&$form, FormStateInterface $form_state) {
+  // The modeler passes the entity ID as the second build arg.
+  $build_info = $form_state->getBuildInfo();
+  $args = $build_info['args'] ?? [];
+  $entityId = $args[1] ?? NULL;
+
+  if (!$entityId) {
+    return;
+  }
+
+  $entity = \Drupal::entityTypeManager()->getStorage('ai_agent')->load($entityId);
+  if (!$entity) {
+    return;
+  }
+
+  $config = $entity->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
+  $enabled = !empty($config['enabled']);
+  $profileId = $config['profile_id'] ?? '';
+
+  // Build the settings URL for the standard entity form.
+  $settingsUrl = \Drupal\Core\Url::fromRoute('entity.ai_agent.edit_form', [
+    'ai_agent' => $entityId,
+  ])->toString();
+
+  if ($enabled && $profileId) {
+    $profile = \Drupal::entityTypeManager()->getStorage('agent_profile')->load($profileId);
+    $profileLabel = $profile ? $profile->label() : $profileId;
+    $tier = $profile ? ($profile->get('security_tier') ?: 'custom') : 'unknown';
+
+    $form['claude_runner_status'] = [
+      '#type' => 'container',
+      '#attributes' => [
+        'class' => ['messages', 'messages--status'],
+        'style' => 'margin: 8px 16px; padding: 12px 16px;',
+      ],
+      '#weight' => -100,
+      'content' => [
+        '#markup' => '<strong>🤖 Claude Code Runner: Active</strong>'
+          . '<br>Profile: <em>' . htmlspecialchars($profileLabel) . '</em>'
+          . ' · Security tier: <em>' . htmlspecialchars($tier) . '</em>'
+          . ' · <a href="' . $settingsUrl . '">Edit runner settings</a>',
+      ],
+    ];
+  }
+  else {
+    $form['claude_runner_status'] = [
+      '#type' => 'container',
+      '#attributes' => [
+        'class' => ['messages', 'messages--warning'],
+        'style' => 'margin: 8px 16px; padding: 12px 16px;',
+      ],
+      '#weight' => -100,
+      'content' => [
+        '#markup' => '<strong>Claude Code Runner: Not configured</strong>'
+          . '<br><a href="' . $settingsUrl . '">Enable Claude Code execution engine</a>',
+      ],
+    ];
+  }
+}
+
+/**
+ * Implements hook_entity_presave().
+ *
+ * Syncs AiAgent tools to AgentRunnerSkill entities when an AiAgent is saved.
+ */
+function ai_claude_agent_sdk_runner_entity_presave(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() !== 'ai_agent') {
+    return;
+  }
+
+  // Only sync if Claude Code runner is enabled on this agent.
+  $config = $entity->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
+  if (empty($config['enabled'])) {
+    return;
+  }
+
+  $tools = $entity->get('tools') ?? [];
+  if (empty($tools)) {
+    return;
+  }
+
+  \Drupal::service('ai_claude_agent_sdk_runner.tool_transition_layer')
+    ->syncToolsForAgent($entity->id(), $tools);
+}
+
+/**
+ * Implements hook_entity_delete().
+ *
+ * Removes AgentRunnerSkill entities when an AiAgent is deleted.
+ */
+function ai_claude_agent_sdk_runner_entity_delete(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() !== 'ai_agent') {
+    return;
+  }
+
+  \Drupal::service('ai_claude_agent_sdk_runner.tool_transition_layer')
+    ->removeSkillsForAgent($entity->id());
+}
+
+/**
+ * Implements hook_page_attachments().
+ */
+function ai_claude_agent_sdk_runner_page_attachments(array &$attachments): void {
+  // Vary page cache by user permissions so the library attaches correctly.
+  $attachments['#cache']['contexts'][] = 'user.permissions';
+  if (\Drupal::currentUser()->hasPermission('access deepchat api')) {
+    $attachments['#attached']['library'][] = 'ai_claude_agent_sdk_runner/async-poll';
+  }
+}

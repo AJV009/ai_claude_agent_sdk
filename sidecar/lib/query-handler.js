@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { mapProfileToOptions } from './profile-mapper.js';
+import { WebhookEmitter } from './webhook-emitter.js';
 
 /**
  * Handle a /api/query request using the JS SDK's query() function.
@@ -108,13 +109,49 @@ export async function handleQuery(req, res, body, counters, permissionManager, q
 
   // Background mode: register, send queryId, then run detached.
   if (isBackground) {
-    sdkOptions.permissionMode = 'plan';
+    // 'default' permission mode requires TTY for interactive prompting —
+    // incompatible with background execution. Override to 'plan' so that
+    // canUseTool handles all permission decisions via webhook polling.
+    // Other modes (acceptEdits, plan, bypassPermissions) work natively.
+    if (!sdkOptions.permissionMode || sdkOptions.permissionMode === 'default') {
+      sdkOptions.permissionMode = 'plan';
+    }
     const metadata = {
       skillId: body.skillId || null,
       initiatorUid: body.initiatorUid || null,
       taskId: body.taskId || null,
     };
     queryRegistry.register(queryId, abortController, metadata);
+
+    // Webhook callback support: create emitter if callbackUrl is provided.
+    const emitter = body.callbackUrl
+      ? new WebhookEmitter(body.callbackUrl, body.callbackToken || '', body.callbackEvents || [])
+      : null;
+
+    // Wire canUseTool for background mode via webhook.
+    // Permission requests are emitted to Drupal, which stores them for
+    // poll-based approval. The promise waits indefinitely (no timeout).
+    if (emitter) {
+      sdkOptions.canUseTool = async (toolName, input, opts) => {
+        const { requestId, promise } = permissionManager.createRequest(
+          queryId, toolName, input, opts, 0,
+        );
+
+        await emitter.emit({
+          type: 'permission_request',
+          queryId,
+          requestId,
+          toolName,
+          input,
+          decisionReason: opts?.decisionReason || '',
+          suggestions: opts?.suggestions || [],
+          blockedPath: opts?.blockedPath || '',
+          toolUseID: opts?.toolUseID || '',
+        });
+
+        return promise;
+      };
+    }
 
     res.write(`data: ${JSON.stringify({ type: 'query_start', queryId })}\n\n`);
     res.write('data: [DONE]\n\n');
@@ -123,25 +160,131 @@ export async function handleQuery(req, res, body, counters, permissionManager, q
     // Run query in detached async IIFE.
     (async () => {
       try {
+        // Emit query_start.
+        if (emitter) {
+          await emitter.emit({ type: 'query_start', queryId, sessionId: null });
+        }
+
         const conversation = query({
           prompt: prompt || '',
           options: sdkOptions,
         });
 
+        let sessionId = null;
+        let totalTurns = 0;
+        let lastAssistantText = '';
+
         for await (const message of conversation) {
+          // Capture text from assistant messages as fallback response.
+          // When tools are used, message.result may be empty, but
+          // the assistant's text messages contain the actual response.
+          if (message.type === 'assistant') {
+            const content = message.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'text' && block.text) {
+                  lastAssistantText = block.text;
+                }
+              }
+            } else if (typeof message.message === 'string' && message.message) {
+              lastAssistantText = message.message;
+            }
+
+            // Emit assistant text blocks for real-time polling display.
+            if (emitter) {
+              const textContent = message.message?.content;
+              if (Array.isArray(textContent)) {
+                for (const block of textContent) {
+                  if (block.type === 'text' && block.text) {
+                    await emitter.emit({
+                      type: 'assistant_text',
+                      queryId,
+                      text: block.text,
+                    });
+                  }
+                }
+              }
+            }
+          }
           // Capture session_id from messages.
           if (message.session_id) {
+            sessionId = message.session_id;
             queryRegistry.update(queryId, { sessionId: message.session_id });
           }
-          // Capture result.
-          if (message.type === 'result' && message.subtype === 'success') {
-            queryRegistry.update(queryId, { result: message.result || '' });
+
+          // Emit tool_use events.
+          // The SDK yields assistant messages with tool_use content blocks
+          // in message.message.content (not message.subtype).
+          if (message.type === 'assistant' && emitter) {
+            const content = message.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'tool_use') {
+                  await emitter.emit({
+                    type: 'tool_use',
+                    queryId,
+                    toolName: block.name || 'unknown',
+                    input: block.input || {},
+                    output: null,
+                    duration: null,
+                  });
+                }
+              }
+            }
           }
+
+          // Emit tool_result events.
+          // The SDK yields user messages with tool_result content blocks.
+          if (message.type === 'user' && message.tool_use_result && emitter) {
+            const content = message.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'tool_result') {
+                  await emitter.emit({
+                    type: 'tool_use',
+                    queryId,
+                    toolName: block.tool_use_id || 'unknown',
+                    input: null,
+                    output: typeof block.content === 'string' ? block.content.substring(0, 200) : '',
+                    duration: null,
+                  });
+                }
+              }
+            }
+          }
+
+          // Capture result.
+          if (message.type === 'result') {
+            // Use message.result if available, otherwise fall back to
+            // the last assistant text message captured during the loop.
+            const resultText = message.result || lastAssistantText || '';
+
+            queryRegistry.update(queryId, { result: resultText });
+
+            if (emitter) {
+              await emitter.emit({
+                type: 'result',
+                queryId,
+                status: message.subtype || 'success',
+                response: resultText,
+                sessionId,
+                totalTurns,
+              });
+            }
+          }
+
+          totalTurns++;
         }
+
         queryRegistry.update(queryId, {
           status: 'completed',
           completedAt: new Date().toISOString(),
         });
+
+        // Drain any remaining webhook events.
+        if (emitter) {
+          await emitter.drain();
+        }
       } catch (err) {
         const isAbort = err.name === 'AbortError'
           || (err.message && err.message.includes('aborted'));
@@ -160,6 +303,17 @@ export async function handleQuery(req, res, body, counters, permissionManager, q
             error: err.message,
             completedAt: new Date().toISOString(),
           });
+        }
+
+        // Emit error event.
+        if (emitter) {
+          await emitter.emit({
+            type: 'error',
+            queryId,
+            errorType: isAbort ? 'abort' : 'runtime',
+            message: err.message,
+          });
+          await emitter.drain();
         }
       } finally {
         counters.queryCount--;

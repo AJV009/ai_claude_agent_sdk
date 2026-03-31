@@ -1,0 +1,9 @@
+async-poll:
+  js:
+    js/claude-async-poll.js: {}
+  css:
+    component:
+      css/claude-async-poll.css: {}
+      css/claude-permission.css: {}
+  dependencies:
+    - core/drupal

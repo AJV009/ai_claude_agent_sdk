@@ -1,0 +1,196 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall hooks for AI Claude Agent SDK Runner.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function ai_claude_agent_sdk_runner_schema() {
+  $schema['ai_claude_runner_executions'] = [
+    'description' => 'Tracks running and completed Claude Code executions.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'query_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ],
+      'agent_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'profile_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'job_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'pending',
+      ],
+      'data' => [
+        'type' => 'text',
+        'size' => 'big',
+        'description' => 'JSON metadata (response, session_id, error, etc.)',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'updated' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'query_id' => ['query_id'],
+    ],
+    'indexes' => [
+      'job_id' => ['job_id'],
+      'status' => ['status'],
+      'agent_id' => ['agent_id'],
+    ],
+  ];
+
+  $schema['ai_claude_runner_events'] = [
+    'description' => 'Stores webhook events for execution tracking.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'query_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ],
+      'event_type' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'event_data' => [
+        'type' => 'text',
+        'size' => 'big',
+      ],
+      'timestamp' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'query_id' => ['query_id'],
+      'event_type' => ['event_type'],
+    ],
+  ];
+
+  $schema['ai_claude_runner_permissions'] = [
+    'description' => 'Tracks permission requests for interactive approval.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'query_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ],
+      'request_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ],
+      'tool_name' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'input_data' => [
+        'type' => 'text',
+        'size' => 'big',
+        'description' => 'JSON tool input data.',
+      ],
+      'decision_reason' => [
+        'type' => 'text',
+        'size' => 'normal',
+        'description' => 'Why permission is needed.',
+      ],
+      'blocked_path' => [
+        'type' => 'varchar',
+        'length' => 512,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'pending',
+      ],
+      'response_message' => [
+        'type' => 'text',
+        'size' => 'normal',
+        'description' => 'User message when responding to permission.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'resolved' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'request_id' => ['request_id'],
+    ],
+    'indexes' => [
+      'query_id' => ['query_id'],
+      'status' => ['status'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Create ai_claude_runner_permissions table.
+ */
+function ai_claude_agent_sdk_runner_update_10001() {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ai_claude_runner_permissions')) {
+    $table = ai_claude_agent_sdk_runner_schema()['ai_claude_runner_permissions'];
+    $schema->createTable('ai_claude_runner_permissions', $table);
+  }
+}

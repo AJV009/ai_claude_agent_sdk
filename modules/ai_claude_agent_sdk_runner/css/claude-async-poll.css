@@ -1,0 +1,59 @@
+/**
+ * @file
+ * Styles for async polling progress display.
+ */
+
+/* Progress list container. */
+.claude-async-progress {
+  font-size: 0.85em;
+  color: #666;
+  margin: 4px 0;
+  padding-left: 16px;
+}
+
+/* Tool event items: compact monospace. */
+.claude-async-progress .claude-async-tool {
+  font-family: monospace;
+  font-size: 0.9em;
+  color: #888;
+  padding: 1px 0;
+}
+
+/* Text event items: no bullet, normal prose styling. */
+.claude-async-progress .claude-async-text {
+  list-style: none;
+  margin-left: -16px;
+  padding: 4px 0;
+  color: #333;
+  font-size: 1em;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+/* Markdown content inside text events. */
+.claude-async-progress .claude-async-text p {
+  margin: 0 0 4px 0;
+}
+
+.claude-async-progress .claude-async-text code {
+  background: #f4f4f4;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.claude-async-progress .claude-async-text pre {
+  background: #f4f4f4;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 4px 0;
+}
+
+/* Collapsed steps section after completion. */
+.claude-async-steps summary {
+  cursor: pointer;
+  font-size: 0.85em;
+  color: #666;
+  padding: 4px 0;
+}

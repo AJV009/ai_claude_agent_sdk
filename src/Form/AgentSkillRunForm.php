@@ -160,6 +160,7 @@ class AgentSkillRunForm extends ConfirmFormBase {
       $queryId = $this->bridge->fireAndForget(
         $profileData,
         $prompt,
+        null,
         $mcpHeaders,
         [
           'skillId' => $this->skill->id(),

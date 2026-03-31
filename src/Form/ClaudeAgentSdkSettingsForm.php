@@ -169,6 +169,13 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Internal URL the Claude Code sidecar uses to reach this Drupal site for policy hook callbacks. Required for Strict tier enforcement in CLI/cron contexts.<br>DDEV default: <code>http://web</code>'),
     ];
 
+    $form['restrict_executor_by_permission'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Restrict executor accounts by permission'),
+      '#description' => $this->t("When enabled, only users with the 'Act as AI executor' permission can be assigned as executors on agent profiles."),
+      '#default_value' => $config->get('restrict_executor_by_permission'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -236,6 +243,7 @@ final class ClaudeAgentSdkSettingsForm extends ConfigFormBase {
       ->set('sidecar_ws_url', (string) $form_state->getValue('sidecar_ws_url'))
       ->set('permission_timeout', (int) $form_state->getValue('permission_timeout'))
       ->set('site_base_url', (string) $form_state->getValue('site_base_url'))
+      ->set('restrict_executor_by_permission', (bool) $form_state->getValue('restrict_executor_by_permission'))
       ->save();
 
     parent::submitForm($form, $form_state);

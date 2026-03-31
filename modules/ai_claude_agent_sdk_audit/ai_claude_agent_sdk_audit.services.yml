@@ -1,0 +1,10 @@
+services:
+  ai_claude_agent_sdk_audit.audit_logger:
+    class: Drupal\ai_claude_agent_sdk_audit\Service\AuditLogger
+    arguments: ['@database', '@datetime.time']
+
+  ai_claude_agent_sdk_audit.policy_decision_subscriber:
+    class: Drupal\ai_claude_agent_sdk_audit\EventSubscriber\PolicyDecisionSubscriber
+    arguments: ['@ai_claude_agent_sdk_audit.audit_logger']
+    tags:
+      - { name: event_subscriber }

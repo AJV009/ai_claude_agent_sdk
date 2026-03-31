@@ -1,0 +1,24 @@
+ai_claude_agent_sdk_audit.overview:
+  path: '/admin/config/ai/claude-agent-sdk/audit-log'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk_audit\Controller\AuditLogController::overview'
+    _title: 'Audit Log'
+  requirements:
+    _permission: 'administer claude agent sdk'
+
+ai_claude_agent_sdk_audit.detail:
+  path: '/admin/config/ai/claude-agent-sdk/audit-log/{audit_entry_id}'
+  defaults:
+    _controller: '\Drupal\ai_claude_agent_sdk_audit\Controller\AuditLogController::detail'
+    _title: 'Audit Log Entry'
+  requirements:
+    _permission: 'administer claude agent sdk'
+    audit_entry_id: '\d+'
+
+ai_claude_agent_sdk_audit.clear:
+  path: '/admin/config/ai/claude-agent-sdk/audit-log/clear'
+  defaults:
+    _form: '\Drupal\ai_claude_agent_sdk_audit\Form\AuditLogClearForm'
+    _title: 'Clear audit log'
+  requirements:
+    _permission: 'administer claude agent sdk'

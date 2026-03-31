@@ -1,0 +1,6 @@
+ai_claude_agent_sdk_audit.audit_log:
+  title: 'Audit Log'
+  description: 'View security policy decisions for Claude Code agents.'
+  parent: ai_claude_agent_sdk.admin
+  route_name: ai_claude_agent_sdk_audit.overview
+  weight: 12

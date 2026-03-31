@@ -1,0 +1,7 @@
+name: 'AI Claude Agent SDK Audit Log'
+type: module
+description: 'Dedicated admin page for viewing Claude Code security policy decisions.'
+package: 'AI'
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - ai_claude_agent_sdk:ai_claude_agent_sdk
