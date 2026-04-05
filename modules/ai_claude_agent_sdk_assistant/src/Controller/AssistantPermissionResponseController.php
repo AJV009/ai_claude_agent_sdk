@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\ai_claude_agent_sdk_runner\Controller;
+namespace Drupal\ai_claude_agent_sdk_assistant\Controller;
 
 use Drupal\ai_claude_agent_sdk_runner\Service\ExecutionStore;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -16,16 +16,9 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * Receives permission decisions from the frontend and forwards to the sidecar.
  */
-class PermissionResponseController extends ControllerBase {
+class AssistantPermissionResponseController extends ControllerBase {
 
-  /**
-   * The config factory (promoted name conflicts with ControllerBase parent).
-   */
   private ConfigFactoryInterface $config;
-
-  /**
-   * The current user (promoted name conflicts with ControllerBase parent).
-   */
   private AccountProxyInterface $user;
 
   public function __construct(
@@ -60,12 +53,10 @@ class PermissionResponseController extends ControllerBase {
     $behavior = $payload['behavior'] ?? '';
     $message = $payload['message'] ?? '';
 
-    // Validate required fields.
     if ($queryId === '' || $requestId === '' || !in_array($behavior, ['allow', 'deny'], TRUE)) {
       return new JsonResponse(['error' => 'Missing or invalid fields'], 400);
     }
 
-    // Validate: user must be the initiator of this execution.
     $initiatorUid = $this->executionStore->getInitiatorUid($queryId);
     if ($initiatorUid === NULL) {
       return new JsonResponse(['error' => 'Execution not found'], 404);

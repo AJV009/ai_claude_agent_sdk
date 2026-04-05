@@ -1,0 +1,7 @@
+services:
+  ai_claude_agent_sdk_assistant.poll_controller:
+    class: Drupal\ai_claude_agent_sdk_assistant\Controller\AssistantPollController
+    arguments:
+      - '@ai_claude_agent_sdk_runner.execution_store'
+      - '@ai_claude_agent_sdk_runner.result_mapper'
+      - '@current_user'

@@ -21,33 +21,3 @@ entity.agent_runner_skill.delete_form:
     _title: 'Delete Runner Skill'
   requirements:
     _permission: 'administer claude agent sdk'
-
-ai_claude_agent_sdk_runner.webhook:
-  path: '/api/claude-runner/webhook'
-  defaults:
-    _controller: '\Drupal\ai_claude_agent_sdk_runner\Controller\ClaudeRunnerWebhookController::receive'
-  requirements:
-    _access: 'TRUE'
-  methods: [POST]
-  options:
-    no_cache: TRUE
-
-ai_claude_agent_sdk_runner.poll:
-  path: '/api/claude-runner/poll/{queryId}'
-  defaults:
-    _controller: 'ai_claude_agent_sdk_runner.poll_controller:poll'
-  methods: [GET]
-  requirements:
-    _permission: 'access deepchat api'
-  options:
-    no_cache: TRUE
-
-ai_claude_agent_sdk_runner.permission_response:
-  path: '/api/claude-runner/permission-response'
-  defaults:
-    _controller: '\Drupal\ai_claude_agent_sdk_runner\Controller\PermissionResponseController::respond'
-  requirements:
-    _permission: 'access deepchat api'
-  methods: [POST]
-  options:
-    no_cache: TRUE

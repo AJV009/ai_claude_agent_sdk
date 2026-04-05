@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\ai_claude_agent_sdk_runner\Controller;
+namespace Drupal\ai_claude_agent_sdk_assistant\Controller;
 
 use Drupal\ai_claude_agent_sdk_runner\Service\ExecutionStore;
 use Drupal\Core\Controller\ControllerBase;
@@ -11,12 +11,12 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Receives webhook events from the sidecar WebhookEmitter.
+ * Receives webhook events from the Claude Code sidecar.
  *
- * Events are authenticated via HMAC token (X-Webhook-Token header)
- * and routed to handlers based on X-Event-Type header.
+ * Events are validated via HMAC callback token and routed to the
+ * ExecutionStore for poll-based tracking by the DeepChat UI.
  */
-class ClaudeRunnerWebhookController extends ControllerBase {
+class AssistantWebhookController extends ControllerBase {
 
   public function __construct(
     protected readonly ExecutionStore $executionStore,
@@ -32,19 +32,24 @@ class ClaudeRunnerWebhookController extends ControllerBase {
   }
 
   /**
-   * Main webhook receiver endpoint.
+   * Receives and routes a sidecar webhook event.
    */
   public function receive(Request $request): JsonResponse {
-    // 1. Validate HMAC token.
-    $token = $request->headers->get('X-Webhook-Token', '');
     $payload = json_decode($request->getContent(), TRUE) ?? [];
     $queryId = $payload['queryId'] ?? '';
 
-    if (!$this->validateToken($token, $queryId)) {
-      return new JsonResponse(['error' => 'unauthorized'], 403);
+    if ($queryId === '') {
+      return new JsonResponse(['error' => 'missing queryId'], 400);
     }
 
-    // 2. Route by event type.
+    // Validate callback token via X-Callback-Token header.
+    $token = $request->headers->get('X-Callback-Token', '');
+    $storedToken = $this->executionStore->getCallbackToken($queryId);
+    if ($storedToken !== NULL && !hash_equals($storedToken, $token)) {
+      return new JsonResponse(['error' => 'invalid token'], 403);
+    }
+
+    // Route by event type.
     $eventType = $request->headers->get('X-Event-Type', '');
 
     return match ($eventType) {
@@ -70,7 +75,7 @@ class ClaudeRunnerWebhookController extends ControllerBase {
   }
 
   /**
-   * Handles tool_use: stores event for result remapping.
+   * Handles tool_use: stores as event.
    */
   protected function handleToolUse(array $payload): JsonResponse {
     $this->executionStore->addEvent($payload['queryId'], $payload);
@@ -78,7 +83,7 @@ class ClaudeRunnerWebhookController extends ControllerBase {
   }
 
   /**
-   * Handles assistant_text: stores text content event for polling.
+   * Handles assistant_text: stores as event.
    */
   protected function handleAssistantText(array $payload): JsonResponse {
     $this->executionStore->addEvent($payload['queryId'], $payload);
@@ -86,24 +91,21 @@ class ClaudeRunnerWebhookController extends ControllerBase {
   }
 
   /**
-   * Handles progress: updates execution metadata.
+   * Handles progress: stores as event.
    */
   protected function handleProgress(array $payload): JsonResponse {
-    $this->executionStore->updateStatus($payload['queryId'], 'running', [
-      'loop_count' => $payload['loopCount'] ?? 0,
-      'last_action' => $payload['lastAction'] ?? '',
-    ]);
+    $this->executionStore->addEvent($payload['queryId'], $payload);
     return new JsonResponse(['ok' => TRUE]);
   }
 
   /**
-   * Handles result: marks execution as completed with response.
+   * Handles result: marks execution as completed with response data.
    */
   protected function handleResult(array $payload): JsonResponse {
     $this->executionStore->updateStatus($payload['queryId'], 'completed', [
       'response' => $payload['response'] ?? '',
-      'session_id' => $payload['sessionId'] ?? '',
-      'total_turns' => $payload['totalTurns'] ?? 0,
+      'session_id' => $payload['sessionId'] ?? NULL,
+      'total_turns' => $payload['totalTurns'] ?? NULL,
     ]);
     return new JsonResponse(['ok' => TRUE]);
   }
@@ -127,27 +129,20 @@ class ClaudeRunnerWebhookController extends ControllerBase {
     $this->executionStore->addEvent($payload['queryId'], $payload);
 
     // Store dedicated permission record for approval tracking.
+    $inputData = $payload['input'] ?? [];
+    if (!empty($payload['agentId'])) {
+      $inputData['_agentId'] = $payload['agentId'];
+    }
     $this->executionStore->storePermissionRequest(
       $payload['queryId'],
       $payload['requestId'] ?? '',
       $payload['toolName'] ?? '',
-      $payload['input'] ?? [],
+      $inputData,
       $payload['decisionReason'] ?? '',
       $payload['blockedPath'] ?? '',
     );
 
     return new JsonResponse(['ok' => TRUE]);
-  }
-
-  /**
-   * Validates the webhook token against stored callback token.
-   */
-  protected function validateToken(string $token, string $queryId): bool {
-    if (empty($token) || empty($queryId)) {
-      return FALSE;
-    }
-    $storedToken = $this->executionStore->getCallbackToken($queryId);
-    return !empty($storedToken) && hash_equals($storedToken, $token);
   }
 
 }

@@ -50,6 +50,24 @@
   margin: 4px 0;
 }
 
+/* Stop/interrupt button. */
+.claude-async-stop {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  font-size: 0.8em;
+  border: 1px solid #ef5350;
+  border-radius: 4px;
+  background: #ffebee;
+  color: #c62828;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.claude-async-stop:hover {
+  background: #ffcdd2;
+}
+
 /* Collapsed steps section after completion. */
 .claude-async-steps summary {
   cursor: pointer;

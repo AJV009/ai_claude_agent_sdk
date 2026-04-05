@@ -1,9 +1,4 @@
-async-poll:
-  js:
-    js/claude-async-poll.js: {}
+runner-form-notes:
   css:
-    component:
-      css/claude-async-poll.css: {}
-      css/claude-permission.css: {}
-  dependencies:
-    - core/drupal
+    theme:
+      css/claude-runner-notes.css: {}

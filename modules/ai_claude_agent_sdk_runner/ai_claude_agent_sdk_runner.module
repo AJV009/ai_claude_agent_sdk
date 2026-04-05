@@ -5,6 +5,7 @@
  * AI Claude Agent SDK Runner module.
  *
  * Routes AI Agent execution through Claude Code via the sidecar.
+ * Handles service decoration, tool-to-skill sync, and agent form integration.
  */
 
 use Drupal\Core\Entity\EntityInterface;
@@ -26,12 +27,6 @@ function ai_claude_agent_sdk_runner_form_alter(&$form, FormStateInterface $form_
   // --- AiAgent forms: filter to bridge-enabled profiles only ---
   if (in_array($form_id, ['ai_agent_add_form', 'ai_agent_edit_form'], TRUE)) {
     _ai_claude_agent_sdk_runner_agent_form_alter($form, $form_state);
-    return;
-  }
-
-  // --- BPMN modeler: add Claude Code Runner status banner ---
-  if ($form_id === 'bpmn_io_modeler') {
-    _ai_claude_agent_sdk_runner_modeler_form_alter($form, $form_state);
     return;
   }
 }
@@ -162,7 +157,6 @@ function _ai_claude_agent_sdk_runner_agent_form_alter(&$form, FormStateInterface
     ],
   ];
 
-  // Warn if no bridge-enabled profiles exist.
   if (count($bridge_profiles) <= 1) {
     $form['claude_runner']['no_profiles_warning'] = [
       '#type' => 'markup',
@@ -178,6 +172,159 @@ function _ai_claude_agent_sdk_runner_agent_form_alter(&$form, FormStateInterface
   }
 
   $form['actions']['submit']['#submit'][] = '_ai_claude_agent_sdk_runner_form_submit';
+
+  // Inject inline runner notes on existing form fields.
+  _ai_claude_agent_sdk_runner_inject_field_notes($form);
+  $form['#attached']['library'][] = 'ai_claude_agent_sdk_runner/runner-form-notes';
+}
+
+/**
+ * Injects inline notes on AiAgent form fields about Claude Code runner behavior.
+ *
+ * Each note is a small markup element with #states tied to the runner toggle,
+ * so notes only appear when the runner is enabled. Notes are appended to
+ * existing field descriptions, not replacing them.
+ */
+function _ai_claude_agent_sdk_runner_inject_field_notes(array &$form): void {
+  $runner_visible = [
+    'visible' => [
+      ':input[name="claude_runner_enabled"]' => ['checked' => TRUE],
+    ],
+  ];
+
+  // --- Top-level fields ---
+
+  // description: USED — sub-agent description.
+  _ai_claude_agent_sdk_runner_append_note(
+    $form['description'],
+    t('Claude runner: used as this agent\'s description when delegated to as a sub-agent.'),
+    $runner_visible,
+    'used',
+  );
+
+  // orchestration_agent: IGNORED.
+  _ai_claude_agent_sdk_runner_append_note(
+    $form['orchestration_agent'],
+    t('Claude runner: not used. Claude Code handles orchestration through its own agent system.'),
+    $runner_visible,
+  );
+
+  // triage_agent: IGNORED.
+  _ai_claude_agent_sdk_runner_append_note(
+    $form['triage_agent'],
+    t('Claude runner: not used. Triage decisions are handled by Claude Code internally.'),
+    $runner_visible,
+  );
+
+  // max_loops: IGNORED for parent, used for sub-agents.
+  _ai_claude_agent_sdk_runner_append_note(
+    $form['max_loops'],
+    t('Claude runner: not enforced for this agent. Used as maxTurns when this agent runs as a sub-agent.'),
+    $runner_visible,
+  );
+
+  // --- prompt_detail children ---
+
+  if (isset($form['prompt_detail'])) {
+    // system_prompt: USED.
+    if (isset($form['prompt_detail']['system_prompt'])) {
+      _ai_claude_agent_sdk_runner_append_note(
+        $form['prompt_detail']['system_prompt'],
+        t('Claude runner: combined with the selected profile\'s system prompt and sent to Claude Code.'),
+        $runner_visible,
+        'used',
+      );
+    }
+
+    // secured_system_prompt: IGNORED.
+    if (isset($form['prompt_detail']['secured_system_prompt'])) {
+      _ai_claude_agent_sdk_runner_append_note(
+        $form['prompt_detail']['secured_system_prompt'],
+        t('Claude runner: not used. The runner reads Agent Instructions directly.'),
+        $runner_visible,
+      );
+    }
+
+    // default_information_tools: IGNORED.
+    if (isset($form['prompt_detail']['default_information_tools'])) {
+      _ai_claude_agent_sdk_runner_append_note(
+        $form['prompt_detail']['default_information_tools'],
+        t('Claude runner: not used. Context tools are not auto-executed; Claude Code gathers context on its own.'),
+        $runner_visible,
+      );
+    }
+
+    // structured_output: USED.
+    if (isset($form['prompt_detail']['structured_output_detail'])) {
+      _ai_claude_agent_sdk_runner_append_note(
+        $form['prompt_detail']['structured_output_detail'],
+        t('Claude runner: translated to prompt instructions telling Claude Code to return output in the specified JSON format.'),
+        $runner_visible,
+        'used',
+      );
+    }
+  }
+
+  // --- tools_box: USED (inside prompt_detail) ---
+
+  if (isset($form['prompt_detail']['tools_box'])) {
+    _ai_claude_agent_sdk_runner_append_note(
+      $form['prompt_detail']['tools_box'],
+      t('Claude runner: enabled tools are converted to Claude Code skills. Sub-agent tools route through delegate-agent (ReACT) or SDK native sub-agents.'),
+      $runner_visible,
+      'used',
+    );
+  }
+
+  // --- tool_usage: per-tool settings, MIXED (inside prompt_detail) ---
+
+  if (isset($form['prompt_detail']['tool_usage']) && is_array($form['prompt_detail']['tool_usage'])) {
+    $form['prompt_detail']['tool_usage']['_claude_runner_tool_note'] = [
+      '#type' => 'container',
+      '#states' => $runner_visible,
+      '#weight' => -100,
+      '#attributes' => ['class' => ['claude-runner-note']],
+      'note' => [
+        '#markup' => '<div class="claude-runner-note--ignored">'
+          . t('<strong>Claude runner:</strong> '
+            . '<em>Require Usage</em> and <em>Description Override</em> are translated to prompt instructions. '
+            . 'All other per-tool settings (<em>Return directly</em>, <em>Use Artifacts</em>, <em>Progress Message</em>) '
+            . 'and property restrictions (<em>force value</em>, <em>hide property</em>, <em>only allow</em>) '
+            . 'are not enforced by the Claude Code runner.')
+          . '</div>',
+      ],
+    ];
+  }
+}
+
+/**
+ * Appends a runner note to a form element's description area.
+ *
+ * Uses a #suffix on the element so it appears right after the field,
+ * wrapped in a container with #states for conditional visibility.
+ *
+ * @param array $element
+ *   The form element to annotate (passed by reference).
+ * @param \Drupal\Core\StringTranslation\TranslatableMarkup|string $note
+ *   The note text.
+ * @param array $states
+ *   The #states array for conditional visibility.
+ * @param string $type
+ *   'ignored' (default grey) or 'used' (green accent).
+ */
+function _ai_claude_agent_sdk_runner_append_note(array &$element, $note, array $states, string $type = 'ignored'): void {
+  $class = $type === 'used' ? 'claude-runner-note--used' : 'claude-runner-note--ignored';
+  // We can't use #states on #suffix directly, so we inject a child container.
+  // Use a unique key to avoid collisions.
+  $element['_claude_runner_note'] = [
+    '#type' => 'container',
+    '#states' => $states,
+    '#attributes' => ['class' => ['claude-runner-note', $class]],
+    '#weight' => 999,
+    'note' => [
+      '#markup' => '<small>' . $note . '</small>',
+    ],
+  ];
 }
 
 /**
@@ -201,73 +348,6 @@ function _ai_claude_agent_sdk_runner_form_submit(array &$form, FormStateInterfac
 }
 
 /**
- * Adds Claude Code Runner status banner to the BPMN modeler page.
- *
- * The BPMN modeler uses a JS-driven form that doesn't support standard
- * Drupal form elements. We add a status banner showing whether Claude Code
- * runner is enabled for this agent and link to the standard form for editing.
- */
-function _ai_claude_agent_sdk_runner_modeler_form_alter(&$form, FormStateInterface $form_state) {
-  // The modeler passes the entity ID as the second build arg.
-  $build_info = $form_state->getBuildInfo();
-  $args = $build_info['args'] ?? [];
-  $entityId = $args[1] ?? NULL;
-
-  if (!$entityId) {
-    return;
-  }
-
-  $entity = \Drupal::entityTypeManager()->getStorage('ai_agent')->load($entityId);
-  if (!$entity) {
-    return;
-  }
-
-  $config = $entity->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
-  $enabled = !empty($config['enabled']);
-  $profileId = $config['profile_id'] ?? '';
-
-  // Build the settings URL for the standard entity form.
-  $settingsUrl = \Drupal\Core\Url::fromRoute('entity.ai_agent.edit_form', [
-    'ai_agent' => $entityId,
-  ])->toString();
-
-  if ($enabled && $profileId) {
-    $profile = \Drupal::entityTypeManager()->getStorage('agent_profile')->load($profileId);
-    $profileLabel = $profile ? $profile->label() : $profileId;
-    $tier = $profile ? ($profile->get('security_tier') ?: 'custom') : 'unknown';
-
-    $form['claude_runner_status'] = [
-      '#type' => 'container',
-      '#attributes' => [
-        'class' => ['messages', 'messages--status'],
-        'style' => 'margin: 8px 16px; padding: 12px 16px;',
-      ],
-      '#weight' => -100,
-      'content' => [
-        '#markup' => '<strong>🤖 Claude Code Runner: Active</strong>'
-          . '<br>Profile: <em>' . htmlspecialchars($profileLabel) . '</em>'
-          . ' · Security tier: <em>' . htmlspecialchars($tier) . '</em>'
-          . ' · <a href="' . $settingsUrl . '">Edit runner settings</a>',
-      ],
-    ];
-  }
-  else {
-    $form['claude_runner_status'] = [
-      '#type' => 'container',
-      '#attributes' => [
-        'class' => ['messages', 'messages--warning'],
-        'style' => 'margin: 8px 16px; padding: 12px 16px;',
-      ],
-      '#weight' => -100,
-      'content' => [
-        '#markup' => '<strong>Claude Code Runner: Not configured</strong>'
-          . '<br><a href="' . $settingsUrl . '">Enable Claude Code execution engine</a>',
-      ],
-    ];
-  }
-}
-
-/**
  * Implements hook_entity_presave().
  *
  * Syncs AiAgent tools to AgentRunnerSkill entities when an AiAgent is saved.
@@ -277,7 +357,6 @@ function ai_claude_agent_sdk_runner_entity_presave(EntityInterface $entity) {
     return;
   }
 
-  // Only sync if Claude Code runner is enabled on this agent.
   $config = $entity->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
   if (empty($config['enabled'])) {
     return;
@@ -304,15 +383,4 @@ function ai_claude_agent_sdk_runner_entity_delete(EntityInterface $entity) {
 
   \Drupal::service('ai_claude_agent_sdk_runner.tool_transition_layer')
     ->removeSkillsForAgent($entity->id());
-}
-
-/**
- * Implements hook_page_attachments().
- */
-function ai_claude_agent_sdk_runner_page_attachments(array &$attachments): void {
-  // Vary page cache by user permissions so the library attaches correctly.
-  $attachments['#cache']['contexts'][] = 'user.permissions';
-  if (\Drupal::currentUser()->hasPermission('access deepchat api')) {
-    $attachments['#attached']['library'][] = 'ai_claude_agent_sdk_runner/async-poll';
-  }
 }

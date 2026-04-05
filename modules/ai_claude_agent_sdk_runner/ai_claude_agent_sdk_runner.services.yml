@@ -12,6 +12,7 @@ services:
       - '@ai_claude_agent_sdk.execution_envelope'
       - '@ai_claude_agent_sdk.execution_principal_resolver'
       - '@config.factory'
+      - '@ai_claude_agent_sdk_runner.tool_transition_layer'
 
   ai_claude_agent_sdk_runner.runner_skill_file_sync:
     class: Drupal\ai_claude_agent_sdk_runner\Service\AgentRunnerSkillFileSync
@@ -37,9 +38,3 @@ services:
       - '@event_dispatcher'
       - '@plugin.manager.ai_agents'
 
-  ai_claude_agent_sdk_runner.poll_controller:
-    class: Drupal\ai_claude_agent_sdk_runner\Controller\ClaudeRunnerPollController
-    arguments:
-      - '@ai_claude_agent_sdk_runner.execution_store'
-      - '@ai_claude_agent_sdk_runner.result_mapper'
-      - '@current_user'

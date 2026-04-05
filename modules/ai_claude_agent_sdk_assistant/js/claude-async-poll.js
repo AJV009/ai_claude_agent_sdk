@@ -18,6 +18,16 @@
   const POLL_INTERVAL_IDLE_MS = 2000;
   const TIMEOUT_MS = 300000; // 5 minutes
 
+  // Shared beforeunload state: counter of active executions prevents stacking.
+  var activeExecutionCount = 0;
+  var sharedUnloadHandler = function (e) {
+    if (activeExecutionCount > 0) {
+      e.preventDefault();
+      e.returnValue = Drupal.t('Claude is still processing. Are you sure you want to leave?');
+    }
+  };
+  var unloadHandlerRegistered = false;
+
   Drupal.behaviors.claudeAsyncPoll = {
     attach: function (context) {
       if (this._observerStarted) {
@@ -136,10 +146,41 @@
       marker.appendChild(statusLine);
     }
 
+    // Stop/interrupt button.
+    var stopBtn = document.createElement('button');
+    stopBtn.className = 'claude-async-stop';
+    stopBtn.textContent = Drupal.t('Stop');
+    stopBtn.title = Drupal.t('Interrupt the current execution');
+    stopBtn.addEventListener('click', function () {
+      var abortUrl = Drupal.url
+        ? Drupal.url('api/claude-runner/abort/' + queryId)
+        : '/api/claude-runner/abort/' + queryId;
+      fetch(abortUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      }).then(function () {
+        isPolling = false;
+        activeExecutionCount = Math.max(0, activeExecutionCount - 1);
+        if (statusLine) {
+          statusLine.textContent = Drupal.t('Execution interrupted.');
+        }
+        stopBtn.remove();
+        marker.dispatchEvent(new CustomEvent('claude-async-error', {
+          bubbles: true,
+          detail: { queryId: queryId, message: 'Aborted by user' }
+        }));
+      }).catch(function () {
+        if (statusLine) {
+          statusLine.textContent = Drupal.t('Failed to stop execution.');
+        }
+      });
+    });
+    marker.appendChild(stopBtn);
+
     // Create progress list inside a collapsible details element.
     var progressDetails = document.createElement('details');
     progressDetails.className = 'claude-async-steps';
-    progressDetails.setAttribute('open', '');
     var progressSummary = document.createElement('summary');
     progressSummary.textContent = Drupal.t('Steps taken (0)');
     progressDetails.appendChild(progressSummary);
@@ -160,14 +201,12 @@
     var startTime = Date.now();
     var isPolling = true;
 
-    // Page unload protection.
-    var unloadHandler = function (e) {
-      if (isPolling) {
-        e.preventDefault();
-        e.returnValue = Drupal.t('Claude is still processing. Are you sure you want to leave?');
-      }
-    };
-    window.addEventListener('beforeunload', unloadHandler);
+    // Page unload protection (shared counter — no stacking).
+    activeExecutionCount++;
+    if (!unloadHandlerRegistered) {
+      window.addEventListener('beforeunload', sharedUnloadHandler);
+      unloadHandlerRegistered = true;
+    }
 
     var currentInterval = POLL_INTERVAL_IDLE_MS;
 
@@ -179,7 +218,8 @@
       // Timeout check.
       if (Date.now() - startTime > TIMEOUT_MS) {
         isPolling = false;
-        window.removeEventListener('beforeunload', unloadHandler);
+        activeExecutionCount = Math.max(0, activeExecutionCount - 1);
+        stopBtn.remove();
         marker.innerHTML = '<p>' + Drupal.t('Execution timed out. Please try again.') + '</p>';
         marker.dispatchEvent(new CustomEvent('claude-async-error', {
           bubbles: true,
@@ -268,8 +308,13 @@
                   toolDisplay += ' \u2192 ' + perm.input.file_path;
                 }
 
+                var agentLabel = perm.agentId
+                  ? '<div class="claude-permission-agent">' + Drupal.t('Sub-agent: @agent', { '@agent': perm.agentId }) + '</div>'
+                  : '';
+
                 permEl.innerHTML =
                   '<div class="claude-permission-header">' + Drupal.t('Permission Required') + '</div>'
+                  + agentLabel
                   + '<div class="claude-permission-tool">' + Drupal.checkPlain(toolDisplay) + '</div>'
                   + (perm.decisionReason
                     ? '<div class="claude-permission-reason">' + Drupal.checkPlain(perm.decisionReason) + '</div>'
@@ -293,7 +338,8 @@
           }
           else if (data.status === 'completed') {
             isPolling = false;
-            window.removeEventListener('beforeunload', unloadHandler);
+            activeExecutionCount = Math.max(0, activeExecutionCount - 1);
+            stopBtn.remove();
 
             // Preserve tool + text progress as a collapsible section above the response.
             var completedHtml = '';
@@ -315,7 +361,8 @@
           }
           else if (data.status === 'error') {
             isPolling = false;
-            window.removeEventListener('beforeunload', unloadHandler);
+            activeExecutionCount = Math.max(0, activeExecutionCount - 1);
+            stopBtn.remove();
             marker.innerHTML = '<p>' + Drupal.t('Error: @message', { '@message': data.message }) + '</p>';
             marker.classList.remove('claude-async-execution');
             marker.classList.add('claude-async-error');
@@ -357,13 +404,18 @@
       }),
     });
 
-    // Collapse the permission prompt to an inline result.
+    // Collapse the permission prompt, then fade out and remove.
     var permEl = btn.closest('.claude-permission-request');
     if (permEl) {
       permEl.innerHTML = '<span class="claude-permission-resolved">'
         + (behavior === 'allow' ? Drupal.t('Approved by user') : Drupal.t('Denied by user'))
         + '</span>';
       permEl.className = 'claude-permission-resolved-container';
+      setTimeout(function () {
+        permEl.style.transition = 'opacity 0.5s';
+        permEl.style.opacity = '0';
+        setTimeout(function () { permEl.remove(); }, 500);
+      }, 3000);
     }
   }
 

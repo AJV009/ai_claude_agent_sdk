@@ -12,8 +12,20 @@ use Drupal\Core\Plugin\DefaultPluginManager;
  *
  * Called on AiAgent entity save (via hook_entity_presave from the .module file)
  * to sync the agent's configured tools as SKILL.md files.
+ *
+ * Handles three tool categories:
+ * - Native tools (ai_agent:*, etc.) → skill with drush tool-run instructions.
+ * - Sub-agent tools (ai_agents::ai_agent::X) without Claude runner → skill
+ *   with drush delegate-agent instructions (Mode A: full ReACT loop).
+ * - Sub-agent tools (ai_agents::ai_agent::X) with Claude runner → skip skill
+ *   creation; handled by SDK native sub-agents (Mode B) in the decorator.
  */
 class ToolTransitionLayer {
+
+  /**
+   * Prefix for sub-agent tool IDs in the ai_agents plugin system.
+   */
+  private const SUB_AGENT_PREFIX = 'ai_agents::ai_agent::';
 
   public function __construct(
     protected readonly DefaultPluginManager $toolManager,
@@ -31,8 +43,29 @@ class ToolTransitionLayer {
   public function syncToolsForAgent(string $agentId, array $tools): void {
     $configuredTools = array_keys(array_filter($tools));
     $storage = $this->entityTypeManager->getStorage('agent_runner_skill');
+    // Track which tool IDs we actually create skills for (pruning uses this).
+    $activeToolIds = [];
 
     foreach ($configuredTools as $toolId) {
+      // Route sub-agent tools separately from native tools.
+      if ($this->isSubAgentTool($toolId)) {
+        $subAgentId = $this->extractSubAgentId($toolId);
+        if (!$subAgentId) {
+          continue;
+        }
+
+        // Mode B: sub-agent has Claude runner → skip skill, decorator handles.
+        if ($this->subAgentHasClaudeRunner($subAgentId)) {
+          continue;
+        }
+
+        // Mode A: sub-agent without Claude runner → delegate-agent skill.
+        $this->syncSubAgentSkill($agentId, $toolId, $subAgentId, $storage);
+        $activeToolIds[] = $toolId;
+        continue;
+      }
+
+      // Native tools: original behavior (drush tool-run skill).
       $definition = $this->getToolDefinition($toolId);
       if (!$definition) {
         continue;
@@ -45,7 +78,6 @@ class ToolTransitionLayer {
         $skill = $storage->create(['id' => $skillId]);
       }
 
-      // Only regenerate if auto_generated is TRUE (user hasn't customized).
       if ($skill->isNew() || $skill->get('auto_generated')) {
         $skill->set('label', $definition['label'] ?? $toolId);
         $skill->set('agent_id', $agentId);
@@ -57,9 +89,10 @@ class ToolTransitionLayer {
       }
 
       $skill->save();
+      $activeToolIds[] = $toolId;
     }
 
-    $this->pruneOrphanedSkills($agentId, $configuredTools);
+    $this->pruneOrphanedSkills($agentId, $activeToolIds);
   }
 
   /**
@@ -99,6 +132,138 @@ class ToolTransitionLayer {
     catch (\Exception) {
       return NULL;
     }
+  }
+
+  /**
+   * Checks if a tool ID is a sub-agent reference.
+   */
+  protected function isSubAgentTool(string $toolId): bool {
+    return str_starts_with($toolId, self::SUB_AGENT_PREFIX);
+  }
+
+  /**
+   * Extracts the AiAgent config entity ID from a sub-agent tool ID.
+   */
+  protected function extractSubAgentId(string $toolId): ?string {
+    if (!$this->isSubAgentTool($toolId)) {
+      return NULL;
+    }
+    $id = substr($toolId, strlen(self::SUB_AGENT_PREFIX));
+    return $id !== '' ? $id : NULL;
+  }
+
+  /**
+   * Checks if a sub-agent has Claude Code runner enabled.
+   */
+  protected function subAgentHasClaudeRunner(string $subAgentId): bool {
+    $agentStorage = $this->entityTypeManager->getStorage('ai_agent');
+    $subAgent = $agentStorage->load($subAgentId);
+    if (!$subAgent) {
+      return FALSE;
+    }
+    $config = $subAgent->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
+    return !empty($config['enabled']) && !empty($config['profile_id']);
+  }
+
+  /**
+   * Creates or updates a delegate-agent skill for a Mode A sub-agent.
+   */
+  protected function syncSubAgentSkill(string $parentAgentId, string $toolId, string $subAgentId, $storage): void {
+    $subAgent = $this->entityTypeManager->getStorage('ai_agent')->load($subAgentId);
+    if (!$subAgent) {
+      return;
+    }
+
+    $skillId = $this->buildSkillId($parentAgentId, $toolId);
+    $skill = $storage->load($skillId);
+
+    if (!$skill) {
+      $skill = $storage->create(['id' => $skillId]);
+    }
+
+    if ($skill->isNew() || $skill->get('auto_generated')) {
+      $label = $subAgent->label() ?: $subAgentId;
+      $description = $subAgent->get('description') ?: 'Delegated AI Agent: ' . $label;
+
+      $skill->set('label', $label);
+      $skill->set('agent_id', $parentAgentId);
+      $skill->set('source_tool_id', $toolId);
+      $skill->set('description', $description);
+      $skill->set('skill_body', $this->generateDelegateSkillBody($subAgentId, $label, $description));
+      $skill->set('input_schema', [
+        'type' => 'object',
+        'properties' => [
+          'task' => [
+            'type' => 'string',
+            'description' => 'The task or prompt to delegate to this agent.',
+          ],
+        ],
+        'required' => ['task'],
+      ]);
+      $skill->set('auto_generated', TRUE);
+    }
+
+    $skill->save();
+  }
+
+  /**
+   * Returns IDs of sub-agents that have Claude runner enabled (Mode B).
+   *
+   * Used by the decorator to build the SDK agents map.
+   *
+   * @param array $tools
+   *   The agent's tools array (tool_id => TRUE).
+   *
+   * @return array
+   *   Array of sub-agent entity IDs that should use Mode B.
+   */
+  public function getModeBSubAgentIds(array $tools): array {
+    $modeBIds = [];
+    foreach (array_keys(array_filter($tools)) as $toolId) {
+      if (!$this->isSubAgentTool($toolId)) {
+        continue;
+      }
+      $subAgentId = $this->extractSubAgentId($toolId);
+      if ($subAgentId && $this->subAgentHasClaudeRunner($subAgentId)) {
+        $modeBIds[] = $subAgentId;
+      }
+    }
+    return $modeBIds;
+  }
+
+  /**
+   * Generates SKILL.md body for a delegate-agent (Mode A) sub-agent.
+   */
+  protected function generateDelegateSkillBody(string $subAgentId, string $label, string $description): string {
+    return <<<MD
+## Sub-Agent: {$label}
+
+{$description}
+
+## Usage
+
+Delegate a task to this agent. It runs a full ReACT loop with its own AI
+provider, tools, and configuration. All agent settings (tool constraints,
+role masquerading, max loops, etc.) are fully enforced.
+
+```bash
+drush ai-claude-agent-sdk:delegate-agent {$subAgentId} --task='<TASK_DESCRIPTION>'
+```
+
+## How it works
+
+- The agent receives your task and reasons about how to solve it
+- It has its own set of Drupal tools and AI provider configuration
+- It executes tools, checks results, and loops until the task is complete
+- The result is returned as JSON with `success`, `response`, and optional `tool_results`
+
+## Important
+
+- Describe the task clearly and specifically in the --task parameter
+- The agent runs synchronously — wait for the JSON response before proceeding
+- The response JSON `success` field indicates whether the task was completed
+- If `success` is false, check the `error` field for details
+MD;
   }
 
   /**

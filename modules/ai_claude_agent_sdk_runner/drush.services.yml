@@ -1,0 +1,10 @@
+services:
+  ai_claude_agent_sdk_runner.delegate_agent_commands:
+    class: Drupal\ai_claude_agent_sdk_runner\Commands\DelegateAgentCommands
+    arguments:
+      - '@plugin.manager.ai_agents'
+      - '@ai.provider'
+      - '@account_switcher'
+      - '@entity_type.manager'
+    tags:
+      - { name: drush.command }

@@ -12,6 +12,16 @@
   margin-bottom: 8px;
 }
 
+.claude-permission-agent {
+  font-size: 0.85em;
+  color: #5d4037;
+  background: #efebe9;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  display: inline-block;
+}
+
 .claude-permission-tool {
   font-family: monospace;
   background: #f5f5f5;

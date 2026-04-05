@@ -1,0 +1,6 @@
+ai_claude_agent_sdk_runner.skills:
+  title: 'Runner Skills'
+  description: 'Manage auto-generated skills from AI Agent tools.'
+  parent: ai_claude_agent_sdk.admin
+  route_name: entity.agent_runner_skill.collection
+  weight: 8

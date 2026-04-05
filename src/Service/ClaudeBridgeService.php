@@ -224,6 +224,7 @@ final class ClaudeBridgeService implements ClaudeBridgeServiceInterface {
       'denied_tools' => 'disallowedTools',
       'working_directory' => 'cwd',
       'allowed_directories' => 'additionalDirectories',
+      'agents' => 'agents',
     ];
 
     foreach ($fieldMap as $profileKey => $sdkKey) {

@@ -194,3 +194,45 @@ function ai_claude_agent_sdk_runner_update_10001() {
     $schema->createTable('ai_claude_runner_permissions', $table);
   }
 }
+
+/**
+ * Remove orphaned runner third-party settings from AiAssistant entities.
+ *
+ * Runner config should only live on AiAgent entities (the single source of
+ * truth read by ClaudeAgentRunnerDecorator). Any settings found on AiAssistant
+ * entities are stale/misleading and must be removed.
+ */
+function ai_claude_agent_sdk_runner_update_10002() {
+  $entityTypeManager = \Drupal::entityTypeManager();
+
+  if (!$entityTypeManager->hasDefinition('ai_assistant')) {
+    return;
+  }
+
+  $storage = $entityTypeManager->getStorage('ai_assistant');
+  $assistants = $storage->loadMultiple();
+  $cleaned = 0;
+
+  foreach ($assistants as $assistant) {
+    $dirty = FALSE;
+
+    // Remove all possible runner third-party setting keys.
+    foreach (['enabled', 'config', 'profile_id'] as $key) {
+      if ($assistant->getThirdPartySetting('ai_claude_agent_sdk_runner', $key) !== NULL) {
+        $assistant->unsetThirdPartySetting('ai_claude_agent_sdk_runner', $key);
+        $dirty = TRUE;
+      }
+    }
+
+    if ($dirty) {
+      $assistant->save();
+      $cleaned++;
+    }
+  }
+
+  if ($cleaned > 0) {
+    return t('Removed orphaned Claude runner settings from @count assistant(s).', [
+      '@count' => $cleaned,
+    ]);
+  }
+}

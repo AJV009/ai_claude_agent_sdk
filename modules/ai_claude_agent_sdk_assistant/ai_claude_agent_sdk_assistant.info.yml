@@ -1,0 +1,9 @@
+name: 'AI Claude Agent SDK Assistant'
+type: module
+description: 'DeepChat UI integration: async polling, permission handling, and execution status for Claude Code agent runs.'
+package: 'AI'
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - ai_claude_agent_sdk:ai_claude_agent_sdk
+  - ai_claude_agent_sdk:ai_claude_agent_sdk_runner
+  - ai:ai_assistant_api

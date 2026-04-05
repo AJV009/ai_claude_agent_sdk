@@ -40,6 +40,7 @@ class ClaudeAgentRunnerDecorator {
     private readonly ExecutionEnvelopeServiceInterface $envelopeService,
     private readonly ExecutionPrincipalResolver $principalResolver,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly ToolTransitionLayer $toolTransitionLayer,
   ) {}
 
   /**
@@ -125,6 +126,24 @@ class ClaudeAgentRunnerDecorator {
         $profileData = $profile->toSidecarFormat();
         $profileData['systemPrompt'] = $this->buildSystemPrompt($agentEntity, $profile, $plugin);
 
+        // 8b. Build SDK agents map for Mode B sub-agents.
+        // Sub-agents with Claude runner enabled become SDK native sub-agents
+        // instead of drush delegate-agent skills.
+        $tools = $agentEntity->get('tools') ?? [];
+        $modeBSubAgentIds = $this->toolTransitionLayer->getModeBSubAgentIds($tools);
+        if (!empty($modeBSubAgentIds)) {
+          $agents = $this->buildSubAgentsMap($modeBSubAgentIds, $profile);
+          if (!empty($agents)) {
+            $profileData['agents'] = $agents;
+            // Add 'Task' to allowed tools to enable sub-agent spawning.
+            $allowedTools = $profileData['allowed_tools'] ?? [];
+            if (is_array($allowedTools) && !in_array('Task', $allowedTools, TRUE)) {
+              $allowedTools[] = 'Task';
+              $profileData['allowed_tools'] = $allowedTools;
+            }
+          }
+        }
+
         // 9. Check for existing session to resume (multi-turn conversation).
         $resumeSessionId = $this->executionStore->getLastSessionId($job_id, $profileId);
 
@@ -184,6 +203,182 @@ class ClaudeAgentRunnerDecorator {
       $message = new ChatMessage('assistant', 'Claude Code execution failed: ' . $e->getMessage());
       return new ChatOutput($message, [$message->getText()], []);
     }
+  }
+
+  /**
+   * Builds the SDK agents map for Mode B sub-agents.
+   *
+   * @param string[] $subAgentIds
+   *   Array of AiAgent entity IDs with Claude runner enabled.
+   * @param \Drupal\ai_claude_agent_sdk\Entity\AgentProfileInterface $parentProfile
+   *   The parent agent's profile (used for model fallback).
+   *
+   * @return array
+   *   SDK-format agents map: agentId => {description, prompt, tools, maxTurns, model?}.
+   */
+  private function buildSubAgentsMap(array $subAgentIds, AgentProfileInterface $parentProfile): array {
+    $agents = [];
+    $agentStorage = $this->entityTypeManager->getStorage('ai_agent');
+
+    foreach ($subAgentIds as $subAgentId) {
+      $subAgent = $agentStorage->load($subAgentId);
+      if (!$subAgent) {
+        continue;
+      }
+
+      $subConfig = $subAgent->getThirdPartySetting('ai_claude_agent_sdk_runner', 'config', []);
+      $subProfileId = $subConfig['profile_id'] ?? '';
+
+      // Load the sub-agent's profile for model info.
+      $subProfile = $subProfileId
+        ? $this->entityTypeManager->getStorage('agent_profile')->load($subProfileId)
+        : NULL;
+
+      $agentDef = [
+        'description' => $subAgent->get('description') ?: $subAgent->label(),
+        'prompt' => $this->buildSubAgentPrompt($subAgent, $subProfile),
+        'tools' => ['Bash', 'Read', 'Grep', 'Glob'],
+      ];
+
+      $maxLoops = (int) ($subAgent->get('max_loops') ?: 0);
+      if ($maxLoops > 0) {
+        $agentDef['maxTurns'] = $maxLoops;
+      }
+
+      // Use the sub-agent's profile model if available, otherwise inherit.
+      if ($subProfile && $subProfile->get('model')) {
+        $agentDef['model'] = $subProfile->get('model');
+      }
+
+      $agents[$subAgentId] = $agentDef;
+    }
+
+    return $agents;
+  }
+
+  /**
+   * Builds the combined prompt for an SDK sub-agent.
+   *
+   * Includes: system_prompt (with token replacement), tool-call instructions,
+   * and translatable settings from the agent configuration.
+   *
+   * @param object $subAgent
+   *   The AiAgent config entity.
+   * @param \Drupal\ai_claude_agent_sdk\Entity\AgentProfileInterface|null $subProfile
+   *   The sub-agent's profile, if any.
+   *
+   * @return string
+   *   The combined sub-agent prompt.
+   */
+  private function buildSubAgentPrompt(object $subAgent, ?AgentProfileInterface $subProfile): string {
+    $parts = [];
+
+    // 1. Profile system prompt (if any).
+    if ($subProfile) {
+      $profilePrompt = $subProfile->getSystemPrompt();
+      if (!empty($profilePrompt)) {
+        $parts[] = $profilePrompt;
+      }
+    }
+
+    // 2. Agent system prompt.
+    $entityData = $subAgent->toArray();
+    $agentPrompt = $entityData['system_prompt'] ?? '';
+    if (!empty($agentPrompt)) {
+      // Apply token replacement.
+      if (\Drupal::hasService('token')) {
+        $agentPrompt = \Drupal::token()->replace($agentPrompt, []);
+      }
+      $parts[] = "## Agent Instructions\n\n" . $agentPrompt;
+    }
+
+    // 3. Tool-call instructions for the agent's configured tools.
+    $tools = $subAgent->get('tools') ?? [];
+    $enabledTools = array_keys(array_filter($tools));
+    if (!empty($enabledTools)) {
+      $toolInstructions = $this->buildToolCallInstructions($enabledTools);
+      if (!empty($toolInstructions)) {
+        $parts[] = $toolInstructions;
+      }
+    }
+
+    // 4. Translatable settings from agent configuration.
+    $settingsInstructions = $this->buildTranslatableSettings($subAgent);
+    if (!empty($settingsInstructions)) {
+      $parts[] = $settingsInstructions;
+    }
+
+    return implode("\n\n", $parts);
+  }
+
+  /**
+   * Builds drush tool-call instructions for a set of tool IDs.
+   */
+  private function buildToolCallInstructions(array $toolIds): string {
+    $nativeTools = [];
+    foreach ($toolIds as $toolId) {
+      // Skip sub-agent tools — those are handled by the SDK agent system.
+      if (str_starts_with($toolId, 'ai_agents::ai_agent::')) {
+        continue;
+      }
+      $nativeTools[] = $toolId;
+    }
+
+    if (empty($nativeTools)) {
+      return '';
+    }
+
+    $lines = ["## Available Drupal Tools\n"];
+    $lines[] = "You can execute Drupal tools using the following drush commands:\n";
+
+    foreach ($nativeTools as $toolId) {
+      $lines[] = "- `drush ai-claude-agent-sdk:tool-run {$toolId} --args='<JSON>'`";
+    }
+
+    $lines[] = "\nTool results are returned as JSON with `success`, `message`, and `context_values` fields.";
+    return implode("\n", $lines);
+  }
+
+  /**
+   * Builds prompt instructions from translatable agent settings.
+   */
+  private function buildTranslatableSettings(object $subAgent): string {
+    $entityData = $subAgent->toArray();
+    $parts = [];
+
+    // require_usage: tools that must be used before responding.
+    $tools = $entityData['tools'] ?? [];
+    $requiredTools = [];
+    foreach ($tools as $toolId => $config) {
+      if (is_array($config) && !empty($config['require_usage'])) {
+        $requiredTools[] = $toolId;
+      }
+    }
+    if (!empty($requiredTools)) {
+      $parts[] = "**Required tools:** You MUST use the following tools before giving your final answer: " . implode(', ', $requiredTools);
+    }
+
+    // structured_output: output format constraints.
+    if (!empty($entityData['structured_output_enabled']) && !empty($entityData['structured_output_schema'])) {
+      $parts[] = "**Output format:** Return your response in this JSON format:\n```json\n"
+        . (is_string($entityData['structured_output_schema'])
+          ? $entityData['structured_output_schema']
+          : json_encode($entityData['structured_output_schema'], JSON_PRETTY_PRINT))
+        . "\n```";
+    }
+
+    // description_override: custom tool descriptions.
+    foreach ($tools as $toolId => $config) {
+      if (is_array($config) && !empty($config['description_override'])) {
+        $parts[] = "**Tool `{$toolId}` note:** " . $config['description_override'];
+      }
+    }
+
+    if (empty($parts)) {
+      return '';
+    }
+
+    return "## Agent Settings\n\n" . implode("\n\n", $parts);
   }
 
   /**

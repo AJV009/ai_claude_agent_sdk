@@ -1,0 +1,32 @@
+/**
+ * @file
+ * Inline notes on AiAgent form fields about Claude Code runner behavior.
+ */
+
+.claude-runner-note {
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.claude-runner-note small {
+  display: block;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 0.82em;
+  line-height: 1.4;
+}
+
+.claude-runner-note--ignored small,
+div.claude-runner-note--ignored {
+  color: #6b6b6b;
+  background: #f3f3f3;
+  border-left: 3px solid #ccc;
+  padding: 3px 8px;
+  font-size: 0.82em;
+}
+
+.claude-runner-note--used small {
+  color: #2e6b33;
+  background: #eef6ee;
+  border-left: 3px solid #7cb87f;
+}

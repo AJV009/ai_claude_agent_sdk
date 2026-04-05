@@ -101,6 +101,7 @@ export async function handleQuery(req, res, body, counters, permissionManager, q
           decisionReason: opts?.decisionReason,
           suggestions: opts?.suggestions,
           toolUseID: opts?.toolUseID,
+          agentId: opts?.agentID || '',
         })}\n\n`);
       }
       return promise;
@@ -147,6 +148,7 @@ export async function handleQuery(req, res, body, counters, permissionManager, q
           suggestions: opts?.suggestions || [],
           blockedPath: opts?.blockedPath || '',
           toolUseID: opts?.toolUseID || '',
+          agentId: opts?.agentID || '',
         });
 
         return promise;
